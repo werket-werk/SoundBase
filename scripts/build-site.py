@@ -3,7 +3,7 @@
 from pathlib import Path
 
 REPO = "https://github.com/werket-werk/SoundBase"
-EMAIL = "hello@lunero.com.au"
+EMAIL = "hello@werket.com.au"
 UPDATED = "8 November 2026"
 OUT = Path(__file__).resolve().parent.parent / "docs"
 
