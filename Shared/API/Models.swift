@@ -71,6 +71,14 @@ struct Song: Codable, Identifiable, Hashable {
         ["flac", "alac", "wav", "aiff", "ape", "wv"].contains((suffix ?? "").lowercased())
     }
     var isRadio: Bool { id.hasPrefix("radio:") }
+
+    /// Whether converting to AAC at `kbps` actually saves space. Files already at or near the
+    /// target bitrate are kept as-is: that's smaller or equal, and re-encoding only loses quality.
+    func shouldTranscode(toKbps kbps: Int) -> Bool {
+        guard kbps > 0 else { return false }
+        guard let bitRate, bitRate > 0 else { return true }
+        return bitRate > kbps + 32
+    }
 }
 
 struct Album: Decodable, Identifiable, Hashable {

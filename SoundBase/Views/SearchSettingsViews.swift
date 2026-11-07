@@ -82,6 +82,7 @@ struct SettingsView: View {
     @AppStorage(Pref.maxBitRate) private var maxBitRate = 0
     @AppStorage(Pref.format) private var format = "raw"
     @AppStorage(Pref.replayGain) private var replayGain = 0
+    @AppStorage(Pref.downloadQuality) private var downloadQuality = Pref.defaultDownloadQuality
     @State private var confirmSignOut = false
 
     var body: some View {
@@ -108,7 +109,19 @@ struct SettingsView: View {
                         Text("MP3").tag("mp3")
                     }
                 } header: { Text("Streaming") } footer: {
-                    Text("Downloads are always stored in original quality. AAC transcoding needs Navidrome 0.64 or later.")
+                    Text("AAC transcoding needs Navidrome 0.64 or later.")
+                }
+                Section {
+                    Picker("Download Quality", selection: $downloadQuality) {
+                        Text("Original").tag(0)
+                        Text("AAC 256 kbps").tag(256)
+                        Text("AAC 192 kbps").tag(192)
+                        Text("AAC 128 kbps").tag(128)
+                    }
+                } header: { Text("Downloads") } footer: {
+                    Text(downloadQuality == 0
+                         ? "Songs are stored exactly as they are on your server. Lossless files take about 6–8 MB per minute."
+                         : "Lossless songs are converted to AAC to save space (about \(downloadQuality * 60 / 8 / 1000) MB per minute). MP3 and AAC files already at or below this quality are kept as they are. Applies to new downloads. The Apple Watch always downloads AAC 128 kbps.")
                 }
                 Section {
                     Picker("Sound Check (ReplayGain)", selection: $replayGain) {

@@ -83,13 +83,23 @@ final class DownloadManager {
     private func fetch(_ song: Song) async {
         defer { inProgress.remove(song.id) }
         guard let client else { return }
+        let quality = UserDefaults.standard.object(forKey: Pref.downloadQuality) as? Int ?? Pref.defaultDownloadQuality
+        var stored = song
+        let url: URL
+        if song.shouldTranscode(toKbps: quality) {
+            url = client.streamURL(song.id, maxBitRate: quality, format: "aac")
+            stored.suffix = "aac"
+            stored.bitRate = quality
+        } else {
+            url = client.downloadURL(song.id)
+        }
         do {
-            let (tmp, response) = try await URLSession.shared.download(from: client.downloadURL(song.id))
+            let (tmp, response) = try await URLSession.shared.download(from: url)
             guard (response as? HTTPURLResponse)?.statusCode ?? 200 < 300 else { return }
-            let dest = fileURL(song)
+            let dest = fileURL(stored)
             try? FileManager.default.removeItem(at: dest)
             try FileManager.default.moveItem(at: tmp, to: dest)
-            songs[song.id] = song
+            songs[song.id] = stored
             persist()
         } catch {
             // Leave it un-downloaded; the user can retry.

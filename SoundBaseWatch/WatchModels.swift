@@ -47,10 +47,13 @@ final class WatchStore {
     func playbackURL(for song: Song) -> URL? {
         let local = fileURL(song.id)
         if downloads[song.id] != nil, FileManager.default.fileExists(atPath: local.path) { return local }
-        return client?.streamURL(song.id, maxBitRate: 192, format: "mp3")
+        return song.shouldTranscode(toKbps: Self.quality)
+            ? client?.streamURL(song.id, maxBitRate: Self.quality, format: "aac")
+            : client?.streamURL(song.id, maxBitRate: 0, format: "raw")
     }
 
-    /// Downloads are transcoded to 192 kbps MP3 to save Watch storage.
+    /// Watch downloads and streams use AAC 128 kbps (about 1 MB per minute) unless the
+    /// original is already a small lossy file.
     func download(_ songs: [Song]) {
         for song in songs where downloads[song.id] == nil && !inProgress.contains(song.id) {
             inProgress.insert(song.id)
@@ -60,8 +63,8 @@ final class WatchStore {
     }
 
     func remove(_ id: String) {
-        downloads.removeValue(forKey: id)
         try? FileManager.default.removeItem(at: fileURL(id))
+        downloads.removeValue(forKey: id)
         persist()
     }
 
@@ -93,17 +96,33 @@ final class WatchStore {
     private func fetch(_ song: Song) async {
         defer { inProgress.remove(song.id) }
         guard let client else { return }
-        let url = client.streamURL(song.id, maxBitRate: 192, format: "mp3")
+        var stored = song
+        let url: URL
+        if song.shouldTranscode(toKbps: Self.quality) {
+            url = client.streamURL(song.id, maxBitRate: Self.quality, format: "aac")
+            stored.suffix = "aac"
+            stored.bitRate = Self.quality
+        } else {
+            url = client.downloadURL(song.id)
+        }
         guard let (tmp, response) = try? await URLSession.shared.download(from: url),
               (response as? HTTPURLResponse)?.statusCode ?? 200 < 300 else { return }
-        let dest = fileURL(song.id)
+        let dest = fileURL(stored)
         try? FileManager.default.removeItem(at: dest)
         guard (try? FileManager.default.moveItem(at: tmp, to: dest)) != nil else { return }
-        downloads[song.id] = song
+        downloads[song.id] = stored
         persist()
     }
 
-    private func fileURL(_ id: String) -> URL { dir.appendingPathComponent("\(id).mp3") }
+    static let quality = 128
+
+    private func fileURL(_ id: String) -> URL {
+        downloads[id].map(fileURL) ?? dir.appendingPathComponent("\(id).aac")
+    }
+
+    private func fileURL(_ song: Song) -> URL {
+        dir.appendingPathComponent("\(song.id).\(song.suffix ?? "aac")")
+    }
 
     private func persist() {
         if let data = try? JSONEncoder().encode(Array(downloads.values)) {

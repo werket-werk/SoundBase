@@ -252,9 +252,12 @@ struct ScrubberView: View {
 
     private var qualityBadge: String? {
         guard let song = player.current, !song.isRadio else { return nil }
+        if let local = player.downloads?.songs[song.id], player.downloads?.localURL(for: song.id) != nil {
+            if local.isLossless { return "Lossless" }
+            return local.suffix?.uppercased()
+        }
         let format = UserDefaults.standard.string(forKey: Pref.format) ?? "raw"
-        let local = player.downloads?.isDownloaded(song.id) == true
-        if format != "raw" && !local { return format.uppercased() }
+        if format != "raw" { return format.uppercased() }
         if song.isLossless { return "Lossless" }
         return song.suffix?.uppercased()
     }

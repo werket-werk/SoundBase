@@ -12,11 +12,11 @@ A native iPhone and Apple Watch player for [Navidrome](https://www.navidrome.org
 - Search with top result, songs, albums and artists
 - Now Playing: blurred-artwork background, time-synced lyrics (tap a line to seek), Up Next with drag to reorder, shuffle, repeat, Autoplay similar music, AirPlay, lossless badge
 - Gapless playback (AVQueuePlayer with preloading), ReplayGain, transcoding options
-- Offline downloads, offline scrobble queue, play queue synced with the server across devices
+- Offline downloads with a space-saving AAC quality setting (Original, 256, 192 or 128 kbps), offline scrobble queue, play queue synced with the server across devices
 - Lock screen and Control Center controls, favourites (stars), playlists (create, add, remove, delete)
 
 **Apple Watch**
-- Standalone: browse playlists, albums, favourites, and download music to the Watch (192 kbps MP3) to play over Bluetooth headphones without the iPhone
+- Standalone: browse playlists, albums, favourites, and download music to the Watch (AAC 128 kbps) to play over Bluetooth headphones without the iPhone
 - Remote: control what's playing on the iPhone, favourite songs, and see Up Next
 - Signs in automatically using the iPhone's server login
 

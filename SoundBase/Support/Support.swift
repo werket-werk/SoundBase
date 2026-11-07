@@ -72,6 +72,8 @@ enum Pref {
     static let maxBitRate = "maxBitRate"      // Int, 0 = original
     static let format = "format"              // "raw", "aac", "opus", "mp3"
     static let replayGain = "replayGain"      // 0 off, 1 track, 2 album
+    static let downloadQuality = "downloadQuality" // Int kbps AAC, 0 = original file
+    static let defaultDownloadQuality = 256
     static let autoplay = "autoplay"
     static let lastServer = "lastServer"
     static let lastUser = "lastUser"
