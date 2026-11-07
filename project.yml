@@ -1,0 +1,52 @@
+name: SoundBase
+options:
+  bundleIdPrefix: com.lunero
+  deploymentTarget:
+    iOS: "18.0"
+    watchOS: "11.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: 225KXPVW4C
+targets:
+  SoundBase:
+    type: application
+    platform: iOS
+    sources: [SoundBase, Shared]
+    info:
+      path: SoundBase/Info.plist
+      properties:
+        CFBundleDisplayName: SoundBase
+        UILaunchScreen: {}
+        UIBackgroundModes: [audio]
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lunero.SoundBase
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    dependencies:
+      - target: SoundBaseWatch
+  SoundBaseWatch:
+    type: application
+    platform: watchOS
+    sources: [SoundBaseWatch, Shared]
+    info:
+      path: SoundBaseWatch/Info.plist
+      properties:
+        CFBundleDisplayName: SoundBase
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: com.lunero.SoundBase
+        UIBackgroundModes: [audio]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lunero.SoundBase.watchkitapp
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
