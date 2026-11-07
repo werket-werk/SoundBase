@@ -23,6 +23,10 @@ final class Router {
     var showNowPlaying = false
     var showSettings = false
     var playlistPickerSongs: [Song]? = nil
+    /// Debug screenshot mode: the panel Now Playing opens with ("lyrics" or "queue").
+    var initialNowPlayingPanel: String?
+    /// Debug screenshot mode: a query the Search tab starts with.
+    var initialSearch: String?
 
     func go(_ route: Route) {
         showNowPlaying = false

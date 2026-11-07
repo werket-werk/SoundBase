@@ -38,6 +38,7 @@
 		7EF73324E8DBB1B0282C4E24 /* HomeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7ECAA731EDE5CB18EF281C /* HomeViews.swift */; };
 		832040A70687525CA89CE848 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1B94F10A392983982B4DB59B /* PrivacyInfo.xcprivacy */; };
 		8735676CED4AD3A66359A545 /* CastManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE540BB2A71752E13E61E9A /* CastManager.swift */; };
+		9370B4C2D011D4E61AF279A5 /* ScreenshotDirector.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2761B5C1930E021115865DD /* ScreenshotDirector.swift */; };
 		966BE44ED76A17E4F6FB0086 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F9E2820352F1876F66976BDD /* Assets.xcassets */; };
 		97A3AFCBE698A4022526AA2A /* Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = A930F5650ED5F9B9720F4E9C /* Support.swift */; };
 		99C052CECBDEB37229DBCEEB /* GoogleCastOptionalUIResources.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 19A063179F9A86AD9C4DA619 /* GoogleCastOptionalUIResources.bundle */; };
@@ -129,6 +130,7 @@
 		D6AC48E7B6C71C32AB640D6B /* GoogleCastUIResources.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleCastUIResources.bundle; sourceTree = "<group>"; };
 		DD4FCE0A9E2FCFCF2754FADB /* DetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailViews.swift; sourceTree = "<group>"; };
 		E0D47EFB5F695443446B24E7 /* SoundBase.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SoundBase.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E2761B5C1930E021115865DD /* ScreenshotDirector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotDirector.swift; sourceTree = "<group>"; };
 		E5628C6057AE9A218288F02E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		E9E16CAA967A4259AAD9E049 /* Platform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Platform.swift; sourceTree = "<group>"; };
 		EE193FE1D283B8A5C6C8FC5D /* SoundBaseMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundBaseMacApp.swift; sourceTree = "<group>"; };
@@ -284,6 +286,7 @@
 			isa = PBXGroup;
 			children = (
 				45DE261B968E2D03F829352D /* AppModel.swift */,
+				E2761B5C1930E021115865DD /* ScreenshotDirector.swift */,
 				D44EAB61B8FFF90B6CC971C2 /* SoundBaseApp.swift */,
 			);
 			path = App;
@@ -464,6 +467,7 @@
 				238578843299DD00E97FC3DE /* PhoneSession.swift in Sources */,
 				5533418435AC9EA52EF25798 /* Platform.swift in Sources */,
 				320E5190C6F2A657A45DCAA1 /* Player.swift in Sources */,
+				9370B4C2D011D4E61AF279A5 /* ScreenshotDirector.swift in Sources */,
 				FEB3527CAA5CF731752C4DDF /* SearchSettingsViews.swift in Sources */,
 				06663BA99612A5B8766827BA /* SoundBaseApp.swift in Sources */,
 				A8360CB437C006B34607498A /* SubsonicClient.swift in Sources */,

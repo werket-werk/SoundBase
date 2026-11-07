@@ -29,11 +29,16 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        if model.client == nil {
-            LoginView()
-        } else {
-            MainTabView()
+        Group {
+            if model.client == nil {
+                LoginView()
+            } else {
+                MainTabView()
+            }
         }
+        #if DEBUG
+        .task { await ScreenshotDirector.run(model) }
+        #endif
     }
 }
 

@@ -120,7 +120,7 @@ Google Cast needs a Chromecast on the same network; AirPlay uses the standard sy
 | Apple Watch (required for the Watch app) | 422 × 514 (Ultra) or 416 × 496 | Library, Downloads, Remote |
 | Mac (required) | 2880 × 1800 | Home with sidebar, Album, Lyrics panel |
 
-Simulator screenshots are fine. Use **File → Save Screen** in Simulator, or the `xcrun simctl io booted screenshot` command.
+iPhone 6.9" screenshots are ready in `screenshots/iphone/` (1320 × 2868). They show an invented demo library with original generated artwork, so there's no third-party album art in the listing. To retake them, run a local Navidrome with demo content and use `scripts/screenshots.sh` (it uses the debug-only screenshot mode in `ScreenshotDirector.swift`).
 
 ## 7. Open-source notes
 

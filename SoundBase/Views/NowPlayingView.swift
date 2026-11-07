@@ -99,6 +99,12 @@ struct NowPlayingView: View {
         }
         .foregroundStyle(.white)
         .environment(\.colorScheme, .dark)
+        .onAppear {
+            if let p = router.initialNowPlayingPanel {
+                panel = p == "queue" ? .queue : .lyrics
+                router.initialNowPlayingPanel = nil
+            }
+        }
         .presentationDragIndicator(.hidden)
         .presentationCornerRadius(40)
         .sheet(isPresented: Binding(

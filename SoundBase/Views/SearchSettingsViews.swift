@@ -33,6 +33,9 @@ struct SearchView: View {
             searching = false
         }
         .task { if genres.isEmpty { genres = (try? await model.client?.genres()) ?? [] } }
+        .onAppear {
+            if let q = model.router.initialSearch { query = q; model.router.initialSearch = nil }
+        }
     }
 
     @ViewBuilder
