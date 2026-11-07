@@ -27,6 +27,8 @@ final class Router {
     var initialNowPlayingPanel: String?
     /// Debug screenshot mode: a query the Search tab starts with.
     var initialSearch: String?
+    /// Debug screenshot mode (Mac): the sidebar section to open, e.g. "playlist:<id>".
+    var initialSection: String?
 
     func go(_ route: Route) {
         showNowPlaying = false

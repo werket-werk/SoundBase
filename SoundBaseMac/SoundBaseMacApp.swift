@@ -77,11 +77,16 @@ struct MacRootView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        if model.client == nil {
-            MacLoginView()
-        } else {
-            MacMainView()
+        Group {
+            if model.client == nil {
+                MacLoginView()
+            } else {
+                MacMainView()
+            }
         }
+        #if DEBUG
+        .task { await MacScreenshotDirector.run(model) }
+        #endif
     }
 }
 
@@ -119,6 +124,19 @@ struct MacMainView: View {
             MacPlaylistPicker()
         }
         .task { router.tab = .home }
+        .onChange(of: router.initialSection) { _, new in
+            guard let new else { return }
+            if new.hasPrefix("playlist:") { section = .playlist(String(new.dropFirst(9))) }
+            else if new == "albums" { section = .albums }
+            else if new == "radio" { section = .radio }
+            else if new.hasPrefix("search:") { search = String(new.dropFirst(7)); section = .search }
+            router.initialSection = nil
+        }
+        .onChange(of: router.initialNowPlayingPanel) { _, new in
+            guard let new else { return }
+            inspector = new == "queue" ? .queue : .lyrics
+            router.initialNowPlayingPanel = nil
+        }
     }
 
     private var sidebar: some View {
@@ -261,6 +279,7 @@ struct MacPlayerBar: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
         .background(.bar)
         .overlay(alignment: .top) { Divider() }
     }

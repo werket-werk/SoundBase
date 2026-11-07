@@ -21,6 +21,7 @@
 		20DD4282AC24E139D68AE9BB /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9E16CAA967A4259AAD9E049 /* Platform.swift */; };
 		238578843299DD00E97FC3DE /* PhoneSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B16A81B00050C171C9780A4 /* PhoneSession.swift */; };
 		270D40CEC91243469FFF74B8 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0D17E3F519CD5FDB07659B /* Models.swift */; };
+		2EAF22EEAF553EE3AA2F845C /* MacScreenshotDirector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 966D07D40C8DD1F1732C408E /* MacScreenshotDirector.swift */; };
 		2EB194C428C2CBEB5CEF5166 /* MaterialDialogs.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 7A69B58A196E929771115034 /* MaterialDialogs.bundle */; };
 		304EE833CC51837736984A79 /* GoogleCastCoreResources.bundle in Resources */ = {isa = PBXBuildFile; fileRef = B46D82784922D612D955FF80 /* GoogleCastCoreResources.bundle */; };
 		312175BAA76A83C15026450E /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 633EAACF100D6F58053DC766 /* NowPlayingView.swift */; };
@@ -120,6 +121,7 @@
 		86FE0C958F5965B58D194A90 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		8BD0643679FDBC462AA31648 /* WatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchViews.swift; sourceTree = "<group>"; };
 		8F0FF4A8C7112245CCB9229A /* SoundBaseWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundBaseWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		966D07D40C8DD1F1732C408E /* MacScreenshotDirector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacScreenshotDirector.swift; sourceTree = "<group>"; };
 		A21910DF1518DE9B5D0705B4 /* MacComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacComponents.swift; sourceTree = "<group>"; };
 		A3EC0E5D7697EC97178B4F1A /* SoundBaseMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SoundBaseMac.entitlements; sourceTree = "<group>"; };
 		A930F5650ED5F9B9720F4E9C /* Support.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Support.swift; sourceTree = "<group>"; };
@@ -201,6 +203,7 @@
 				A21910DF1518DE9B5D0705B4 /* MacComponents.swift */,
 				01E34B3ED9A5EB97974B5588 /* MacPanels.swift */,
 				5BA356D82BBFBC8A676868CC /* MacScreens.swift */,
+				966D07D40C8DD1F1732C408E /* MacScreenshotDirector.swift */,
 				72222EF7B5214B0052D9004D /* MacStubs.swift */,
 				86FE0C958F5965B58D194A90 /* PrivacyInfo.xcprivacy */,
 				A3EC0E5D7697EC97178B4F1A /* SoundBaseMac.entitlements */,
@@ -505,6 +508,7 @@
 				E92595356F01256FF0A216E6 /* MacComponents.swift in Sources */,
 				0E39A2235737DDFCC98C89FB /* MacPanels.swift in Sources */,
 				13954272E1165F932900B2B7 /* MacScreens.swift in Sources */,
+				2EAF22EEAF553EE3AA2F845C /* MacScreenshotDirector.swift in Sources */,
 				ACDA9A57F9C1319F0ED57D72 /* MacStubs.swift in Sources */,
 				E1837B83BA642A9A6270C1A8 /* Models.swift in Sources */,
 				20DD4282AC24E139D68AE9BB /* Platform.swift in Sources */,
