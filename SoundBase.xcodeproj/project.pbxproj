@@ -9,10 +9,15 @@
 /* Begin PBXBuildFile section */
 		06663BA99612A5B8766827BA /* SoundBaseApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44EAB61B8FFF90B6CC971C2 /* SoundBaseApp.swift */; };
 		0AEACEED8D44C256D12BCFF4 /* GoogleSansMedium.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 84AA95C2F69173E0B3B6E8A9 /* GoogleSansMedium.bundle */; };
+		0E10B7F1D609E979A61ED50E /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F4BE5881B16F359A73C250 /* Theme.swift */; };
+		0E39A2235737DDFCC98C89FB /* MacPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E34B3ED9A5EB97974B5588 /* MacPanels.swift */; };
+		13954272E1165F932900B2B7 /* MacScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA356D82BBFBC8A676868CC /* MacScreens.swift */; };
 		16CF96282507B2C26849812D /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16F70586B77D514923BC3AE0 /* Components.swift */; };
 		179AEB4C76DBAD6FF6630CA5 /* WatchModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1461B2C2CECE47ABD7217AE9 /* WatchModels.swift */; };
+		18072C4F6348D5A17A5E975F /* WatchProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8E321E18CEC681B48880C5 /* WatchProtocol.swift */; };
 		1D0287C2EDF24BA88AF174D5 /* GoogleCastUIResources.bundle in Resources */ = {isa = PBXBuildFile; fileRef = D6AC48E7B6C71C32AB640D6B /* GoogleCastUIResources.bundle */; };
 		1D6CDD07285EAAAFA5ED8F19 /* GoogleSansBold.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 32CE73DB370EFEEF4DEEFA43 /* GoogleSansBold.bundle */; };
+		20DD4282AC24E139D68AE9BB /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9E16CAA967A4259AAD9E049 /* Platform.swift */; };
 		238578843299DD00E97FC3DE /* PhoneSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B16A81B00050C171C9780A4 /* PhoneSession.swift */; };
 		270D40CEC91243469FFF74B8 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0D17E3F519CD5FDB07659B /* Models.swift */; };
 		2EB194C428C2CBEB5CEF5166 /* MaterialDialogs.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 7A69B58A196E929771115034 /* MaterialDialogs.bundle */; };
@@ -25,14 +30,22 @@
 		4270FE9BF457311C56F6CE53 /* GoogleCast.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = FDE16CE10816C129754A2932 /* GoogleCast.xcframework */; };
 		441643DA151EE7657B02BADB /* SoundBaseWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 8F0FF4A8C7112245CCB9229A /* SoundBaseWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		51664212B4B43505F8D7ED4A /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0D17E3F519CD5FDB07659B /* Models.swift */; };
+		52B6550A067C644A1E52ED70 /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9E16CAA967A4259AAD9E049 /* Platform.swift */; };
+		5533418435AC9EA52EF25798 /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9E16CAA967A4259AAD9E049 /* Platform.swift */; };
 		56671AABD194F1CA24CC014C /* SubsonicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB56A19DD31AB29706E4867 /* SubsonicClient.swift */; };
+		5FC8AFAA05C08D39543A943B /* SoundBaseMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE193FE1D283B8A5C6C8FC5D /* SoundBaseMacApp.swift */; };
+		7A74CF60625DF8CF18502B82 /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3447B2362E6B1935547798 /* DownloadManager.swift */; };
 		7EF73324E8DBB1B0282C4E24 /* HomeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7ECAA731EDE5CB18EF281C /* HomeViews.swift */; };
 		8735676CED4AD3A66359A545 /* CastManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE540BB2A71752E13E61E9A /* CastManager.swift */; };
 		966BE44ED76A17E4F6FB0086 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F9E2820352F1876F66976BDD /* Assets.xcassets */; };
+		97A3AFCBE698A4022526AA2A /* Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = A930F5650ED5F9B9720F4E9C /* Support.swift */; };
 		99C052CECBDEB37229DBCEEB /* GoogleCastOptionalUIResources.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 19A063179F9A86AD9C4DA619 /* GoogleCastOptionalUIResources.bundle */; };
 		A36862D0FF3D509878832864 /* WatchProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8E321E18CEC681B48880C5 /* WatchProtocol.swift */; };
 		A8360CB437C006B34607498A /* SubsonicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB56A19DD31AB29706E4867 /* SubsonicClient.swift */; };
+		ACDA9A57F9C1319F0ED57D72 /* MacStubs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72222EF7B5214B0052D9004D /* MacStubs.swift */; };
+		AEB146FAFE4B25C79C0553DA /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FF48BA8870AEC0FC5B7705 /* Player.swift */; };
 		B29D27EA9DC07EB7443BECA1 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F4BE5881B16F359A73C250 /* Theme.swift */; };
+		B4592F5E7C6FAF5A134D72C9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D5E38D110A7362502AEDCCF4 /* Assets.xcassets */; };
 		B8AC2C3FE0E76EFDBFABDA36 /* Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = A930F5650ED5F9B9720F4E9C /* Support.swift */; };
 		C1A4706664184F69B9F149D1 /* WatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BD0643679FDBC462AA31648 /* WatchViews.swift */; };
 		C9AE982FA36D0F860686E73C /* ThemeSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 261C1261D3DFDFF166642E49 /* ThemeSupport.swift */; };
@@ -40,7 +53,11 @@
 		D16117FF95D7E3390724DD3C /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F4BE5881B16F359A73C250 /* Theme.swift */; };
 		D7A6E0C4CDBA37C24BA3DFA1 /* GoogleSansRegular.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 17115C095C5A2BFABEFE7E0B /* GoogleSansRegular.bundle */; };
 		DD4173100AF3F4229041B46A /* WatchProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8E321E18CEC681B48880C5 /* WatchProtocol.swift */; };
+		E1837B83BA642A9A6270C1A8 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0D17E3F519CD5FDB07659B /* Models.swift */; };
 		E4793CFB7784E49C75860340 /* DetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4FCE0A9E2FCFCF2754FADB /* DetailViews.swift */; };
+		E5B444E4AEF66622D45935F2 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45DE261B968E2D03F829352D /* AppModel.swift */; };
+		E92595356F01256FF0A216E6 /* MacComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21910DF1518DE9B5D0705B4 /* MacComponents.swift */; };
+		F06ED20C61DA4FE1F7B93774 /* SubsonicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB56A19DD31AB29706E4867 /* SubsonicClient.swift */; };
 		FAC638CC7F2B802588ADC81E /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45DE261B968E2D03F829352D /* AppModel.swift */; };
 		FEB3527CAA5CF731752C4DDF /* SearchSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEF24FAB150F6219B1540FD8 /* SearchSettingsViews.swift */; };
 /* End PBXBuildFile section */
@@ -70,6 +87,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		01E34B3ED9A5EB97974B5588 /* MacPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPanels.swift; sourceTree = "<group>"; };
 		0E8E321E18CEC681B48880C5 /* WatchProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchProtocol.swift; sourceTree = "<group>"; };
 		0FD7F303E250564189D025CB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		12FF48BA8870AEC0FC5B7705 /* Player.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Player.swift; sourceTree = "<group>"; };
@@ -77,31 +95,40 @@
 		16F70586B77D514923BC3AE0 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		17115C095C5A2BFABEFE7E0B /* GoogleSansRegular.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleSansRegular.bundle; sourceTree = "<group>"; };
 		19A063179F9A86AD9C4DA619 /* GoogleCastOptionalUIResources.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleCastOptionalUIResources.bundle; sourceTree = "<group>"; };
+		2357D6719402FA95995C0FCC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		261C1261D3DFDFF166642E49 /* ThemeSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSupport.swift; sourceTree = "<group>"; };
 		2B16A81B00050C171C9780A4 /* PhoneSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneSession.swift; sourceTree = "<group>"; };
 		32CE73DB370EFEEF4DEEFA43 /* GoogleSansBold.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleSansBold.bundle; sourceTree = "<group>"; };
 		45DE261B968E2D03F829352D /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		49F4BE5881B16F359A73C250 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		5163F3CFCE0BE69051266469 /* LibraryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViews.swift; sourceTree = "<group>"; };
+		5BA356D82BBFBC8A676868CC /* MacScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacScreens.swift; sourceTree = "<group>"; };
 		5D0216FDB2294B62362A40F1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		633EAACF100D6F58053DC766 /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
 		6FE540BB2A71752E13E61E9A /* CastManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CastManager.swift; sourceTree = "<group>"; };
+		72222EF7B5214B0052D9004D /* MacStubs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacStubs.swift; sourceTree = "<group>"; };
 		7A69B58A196E929771115034 /* MaterialDialogs.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = MaterialDialogs.bundle; sourceTree = "<group>"; };
 		84AA95C2F69173E0B3B6E8A9 /* GoogleSansMedium.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleSansMedium.bundle; sourceTree = "<group>"; };
 		8BD0643679FDBC462AA31648 /* WatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchViews.swift; sourceTree = "<group>"; };
 		8F0FF4A8C7112245CCB9229A /* SoundBaseWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundBaseWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A21910DF1518DE9B5D0705B4 /* MacComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacComponents.swift; sourceTree = "<group>"; };
+		A3EC0E5D7697EC97178B4F1A /* SoundBaseMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SoundBaseMac.entitlements; sourceTree = "<group>"; };
 		A930F5650ED5F9B9720F4E9C /* Support.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Support.swift; sourceTree = "<group>"; };
 		AB3447B2362E6B1935547798 /* DownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManager.swift; sourceTree = "<group>"; };
 		AB7ECAA731EDE5CB18EF281C /* HomeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViews.swift; sourceTree = "<group>"; };
 		B46D82784922D612D955FF80 /* GoogleCastCoreResources.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleCastCoreResources.bundle; sourceTree = "<group>"; };
 		CA0D17E3F519CD5FDB07659B /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		D44EAB61B8FFF90B6CC971C2 /* SoundBaseApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundBaseApp.swift; sourceTree = "<group>"; };
+		D5E38D110A7362502AEDCCF4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D6AC48E7B6C71C32AB640D6B /* GoogleCastUIResources.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleCastUIResources.bundle; sourceTree = "<group>"; };
 		DD4FCE0A9E2FCFCF2754FADB /* DetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailViews.swift; sourceTree = "<group>"; };
 		E0D47EFB5F695443446B24E7 /* SoundBase.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SoundBase.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E5628C6057AE9A218288F02E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		E9E16CAA967A4259AAD9E049 /* Platform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Platform.swift; sourceTree = "<group>"; };
+		EE193FE1D283B8A5C6C8FC5D /* SoundBaseMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundBaseMacApp.swift; sourceTree = "<group>"; };
 		F9E2820352F1876F66976BDD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FBB56A19DD31AB29706E4867 /* SubsonicClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubsonicClient.swift; sourceTree = "<group>"; };
+		FCAE8C72E86DFA3C15C3C1F4 /* SoundBaseMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundBaseMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FDE16CE10816C129754A2932 /* GoogleCast.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GoogleCast.xcframework; path = Vendor/GoogleCast.xcframework; sourceTree = "<group>"; };
 		FEF24FAB150F6219B1540FD8 /* SearchSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchSettingsViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -155,6 +182,21 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		832C4CFB752F5E0BBA21E558 /* SoundBaseMac */ = {
+			isa = PBXGroup;
+			children = (
+				D5E38D110A7362502AEDCCF4 /* Assets.xcassets */,
+				2357D6719402FA95995C0FCC /* Info.plist */,
+				A21910DF1518DE9B5D0705B4 /* MacComponents.swift */,
+				01E34B3ED9A5EB97974B5588 /* MacPanels.swift */,
+				5BA356D82BBFBC8A676868CC /* MacScreens.swift */,
+				72222EF7B5214B0052D9004D /* MacStubs.swift */,
+				A3EC0E5D7697EC97178B4F1A /* SoundBaseMac.entitlements */,
+				EE193FE1D283B8A5C6C8FC5D /* SoundBaseMacApp.swift */,
+			);
+			path = SoundBaseMac;
+			sourceTree = "<group>";
+		};
 		89CA38706A0BECB10D379DF7 /* Support */ = {
 			isa = PBXGroup;
 			children = (
@@ -181,6 +223,7 @@
 				77D8094587CE978EB24580CD /* GoogleCast.framework */,
 				A7AFBB208BEACE3AE1695193 /* Shared */,
 				2D6C58FDC1B29068DAB24A1F /* SoundBase */,
+				832C4CFB752F5E0BBA21E558 /* SoundBaseMac */,
 				91134E871D7BE918EC667117 /* SoundBaseWatch */,
 				79FCA47BD5F93D116EAEB1E1 /* Frameworks */,
 				E302B2F05EAF8508348CC121 /* Products */,
@@ -190,6 +233,7 @@
 		A7AFBB208BEACE3AE1695193 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				E9E16CAA967A4259AAD9E049 /* Platform.swift */,
 				49F4BE5881B16F359A73C250 /* Theme.swift */,
 				0E8E321E18CEC681B48880C5 /* WatchProtocol.swift */,
 				D73BF90F5A511CAA3651EC92 /* API */,
@@ -221,6 +265,7 @@
 			isa = PBXGroup;
 			children = (
 				E0D47EFB5F695443446B24E7 /* SoundBase.app */,
+				FCAE8C72E86DFA3C15C3C1F4 /* SoundBaseMac.app */,
 				8F0FF4A8C7112245CCB9229A /* SoundBaseWatch.app */,
 			);
 			name = Products;
@@ -291,6 +336,24 @@
 			productReference = 8F0FF4A8C7112245CCB9229A /* SoundBaseWatch.app */;
 			productType = "com.apple.product-type.application";
 		};
+		EDB637D2DC5C1C56C7C9E80E /* SoundBaseMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3F6D4AC9C548D346B6F1FF37 /* Build configuration list for PBXNativeTarget "SoundBaseMac" */;
+			buildPhases = (
+				E5A2D5B5327637FE9AE1E670 /* Sources */,
+				0A4B89B57D974DE82F3B8DC0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SoundBaseMac;
+			packageProductDependencies = (
+			);
+			productName = SoundBaseMac;
+			productReference = FCAE8C72E86DFA3C15C3C1F4 /* SoundBaseMac.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -305,6 +368,10 @@
 						ProvisioningStyle = Automatic;
 					};
 					98314914B8EEDE13470AEC9B = {
+						DevelopmentTeam = 225KXPVW4C;
+						ProvisioningStyle = Automatic;
+					};
+					EDB637D2DC5C1C56C7C9E80E = {
 						DevelopmentTeam = 225KXPVW4C;
 						ProvisioningStyle = Automatic;
 					};
@@ -328,12 +395,21 @@
 			projectRoot = "";
 			targets = (
 				91D84130C52AD75D440563C2 /* SoundBase */,
+				EDB637D2DC5C1C56C7C9E80E /* SoundBaseMac */,
 				98314914B8EEDE13470AEC9B /* SoundBaseWatch */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		0A4B89B57D974DE82F3B8DC0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B4592F5E7C6FAF5A134D72C9 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C93716F49C87DCB4AE79543B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -374,6 +450,7 @@
 				51664212B4B43505F8D7ED4A /* Models.swift in Sources */,
 				312175BAA76A83C15026450E /* NowPlayingView.swift in Sources */,
 				238578843299DD00E97FC3DE /* PhoneSession.swift in Sources */,
+				5533418435AC9EA52EF25798 /* Platform.swift in Sources */,
 				320E5190C6F2A657A45DCAA1 /* Player.swift in Sources */,
 				FEB3527CAA5CF731752C4DDF /* SearchSettingsViews.swift in Sources */,
 				06663BA99612A5B8766827BA /* SoundBaseApp.swift in Sources */,
@@ -390,11 +467,33 @@
 			buildActionMask = 2147483647;
 			files = (
 				270D40CEC91243469FFF74B8 /* Models.swift in Sources */,
+				52B6550A067C644A1E52ED70 /* Platform.swift in Sources */,
 				56671AABD194F1CA24CC014C /* SubsonicClient.swift in Sources */,
 				D16117FF95D7E3390724DD3C /* Theme.swift in Sources */,
 				179AEB4C76DBAD6FF6630CA5 /* WatchModels.swift in Sources */,
 				DD4173100AF3F4229041B46A /* WatchProtocol.swift in Sources */,
 				C1A4706664184F69B9F149D1 /* WatchViews.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E5A2D5B5327637FE9AE1E670 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E5B444E4AEF66622D45935F2 /* AppModel.swift in Sources */,
+				7A74CF60625DF8CF18502B82 /* DownloadManager.swift in Sources */,
+				E92595356F01256FF0A216E6 /* MacComponents.swift in Sources */,
+				0E39A2235737DDFCC98C89FB /* MacPanels.swift in Sources */,
+				13954272E1165F932900B2B7 /* MacScreens.swift in Sources */,
+				ACDA9A57F9C1319F0ED57D72 /* MacStubs.swift in Sources */,
+				E1837B83BA642A9A6270C1A8 /* Models.swift in Sources */,
+				20DD4282AC24E139D68AE9BB /* Platform.swift in Sources */,
+				AEB146FAFE4B25C79C0553DA /* Player.swift in Sources */,
+				5FC8AFAA05C08D39543A943B /* SoundBaseMacApp.swift in Sources */,
+				F06ED20C61DA4FE1F7B93774 /* SubsonicClient.swift in Sources */,
+				97A3AFCBE698A4022526AA2A /* Support.swift in Sources */,
+				0E10B7F1D609E979A61ED50E /* Theme.swift in Sources */,
+				18072C4F6348D5A17A5E975F /* WatchProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -409,6 +508,46 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		22E12D11D0F887F599260AE8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SoundBaseMac/SoundBaseMac.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = SoundBaseMac/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lunero.SoundBase;
+				PRODUCT_NAME = SoundBase;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		59A93B3AD2FFACC0F8435C4F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SoundBaseMac/SoundBaseMac.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = SoundBaseMac/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lunero.SoundBase;
+				PRODUCT_NAME = SoundBase;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
 		7551D2AACAF902DAFD3D22AC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -637,6 +776,15 @@
 			buildConfigurations = (
 				7551D2AACAF902DAFD3D22AC /* Debug */,
 				FF54885D2E7E160154835A61 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		3F6D4AC9C548D346B6F1FF37 /* Build configuration list for PBXNativeTarget "SoundBaseMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				59A93B3AD2FFACC0F8435C4F /* Debug */,
+				22E12D11D0F887F599260AE8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -1,6 +1,11 @@
 import Foundation
 import Security
+import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // MARK: - Keychain-backed credential storage
 
@@ -37,19 +42,27 @@ enum CredentialStore {
 
 final class ImageLoader: @unchecked Sendable {
     static let shared = ImageLoader()
-    private let cache = NSCache<NSURL, UIImage>()
+    private let cache = NSCache<NSURL, PlatformImage>()
 
     init() { cache.countLimit = 400 }
 
-    func cached(_ url: URL) -> UIImage? { cache.object(forKey: url as NSURL) }
+    func cached(_ url: URL) -> PlatformImage? { cache.object(forKey: url as NSURL) }
 
-    func image(_ url: URL) async -> UIImage? {
+    func image(_ url: URL) async -> PlatformImage? {
         if let hit = cache.object(forKey: url as NSURL) { return hit }
         let request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad)
         guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let image = UIImage(data: data)?.preparingForDisplay() ?? UIImage(data: data) else { return nil }
+              let image = Self.decode(data) else { return nil }
         cache.setObject(image, forKey: url as NSURL)
         return image
+    }
+
+    private static func decode(_ data: Data) -> PlatformImage? {
+        #if os(iOS)
+        return UIImage(data: data)?.preparingForDisplay() ?? UIImage(data: data)
+        #else
+        return NSImage(data: data)
+        #endif
     }
 
     func clear() {
@@ -58,6 +71,7 @@ final class ImageLoader: @unchecked Sendable {
     }
 }
 
+#if os(iOS)
 extension UIImage {
     func thumbnailJPEG(side: CGFloat, quality: CGFloat = 0.6) -> Data? {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
@@ -65,6 +79,7 @@ extension UIImage {
             .jpegData(compressionQuality: quality)
     }
 }
+#endif
 
 // MARK: - Settings keys
 

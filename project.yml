@@ -79,3 +79,31 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lunero.SoundBase.watchkitapp
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+  SoundBaseMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - SoundBaseMac
+      - Shared
+      - SoundBase/App/AppModel.swift
+      - SoundBase/Player/Player.swift
+      - SoundBase/Player/DownloadManager.swift
+      - SoundBase/Support/Support.swift
+    info:
+      path: SoundBaseMac/Info.plist
+      properties:
+        CFBundleDisplayName: SoundBase
+        CFBundleName: SoundBase
+        LSApplicationCategoryType: public.app-category.music
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_NAME: SoundBase
+        PRODUCT_BUNDLE_IDENTIFIER: com.lunero.SoundBase
+        CODE_SIGN_ENTITLEMENTS: SoundBaseMac/SoundBaseMac.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        COMBINE_HIDPI_IMAGES: YES

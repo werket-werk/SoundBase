@@ -20,7 +20,7 @@ final class Player {
     /// Queue index where Autoplay ("similar music") songs begin, if any.
     private(set) var autoplayStart: Int?
     private(set) var history: [Song] = []
-    private(set) var artwork: UIImage?
+    private(set) var artwork: PlatformImage?
     var autoplay = UserDefaults.standard.object(forKey: Pref.autoplay) as? Bool ?? true {
         didSet {
             UserDefaults.standard.set(autoplay, forKey: Pref.autoplay)
@@ -60,7 +60,9 @@ final class Player {
     @ObservationIgnored private var lastNowPlayingPush: Double = 0
 
     init() {
+        #if os(iOS)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, policy: .longFormAudio)
+        #endif
         avPlayer.automaticallyWaitsToMinimizeStalling = true
         timeObserver = avPlayer.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] time in
             MainActor.assumeIsolated { self?.tick(time.seconds) }
@@ -75,6 +77,7 @@ final class Player {
             let item = note.object as? AVPlayerItem
             MainActor.assumeIsolated { self?.itemDidEnd(item) }
         }
+        #if os(iOS)
         NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init)
             let options = AVAudioSession.InterruptionOptions(rawValue: note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
@@ -82,6 +85,7 @@ final class Player {
                 if type == .ended, options.contains(.shouldResume) { self?.resume() }
             }
         }
+        #endif
         configureRemoteCommands()
     }
 
@@ -200,7 +204,7 @@ final class Player {
             return
         }
         if currentItem == nil, current != nil { startCurrent(); return }
-        try? AVAudioSession.sharedInstance().setActive(true)
+        activateSession()
         avPlayer.play()
     }
 
@@ -304,7 +308,7 @@ final class Player {
         applyGain(song)
         preloadNext()
         if autoPlay {
-            try? AVAudioSession.sharedInstance().setActive(true)
+            activateSession()
             avPlayer.play()
         }
         trackChanged(announce: autoPlay)
@@ -548,7 +552,13 @@ final class Player {
     }
 
     /// Built outside the main actor: MediaPlayer calls the handler on a background thread.
-    nonisolated private static func mediaArtwork(_ image: UIImage) -> MPMediaItemArtwork {
+    private func activateSession() {
+        #if os(iOS)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
+    }
+
+    nonisolated private static func mediaArtwork(_ image: PlatformImage) -> MPMediaItemArtwork {
         MPMediaItemArtwork(boundsSize: image.size) { _ in image }
     }
 
