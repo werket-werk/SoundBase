@@ -14,6 +14,9 @@ struct SoundBaseWatchApp: App {
                 .environment(session)
                 .tint(session.accent.color)
                 .onAppear { session.start(store: store) }
+                #if DEBUG
+                .task { await WatchScreenshotDirector.run(store: store, session: session) }
+                #endif
         }
     }
 }
@@ -24,7 +27,8 @@ struct WatchRootView: View {
     @Environment(WatchSession.self) private var session
 
     var body: some View {
-        NavigationStack {
+        @Bindable var store = store
+        NavigationStack(path: $store.path) {
             List {
                 if session.phoneIsPlayingSomething {
                     NavigationLink { RemoteView() } label: {
@@ -66,8 +70,24 @@ struct WatchRootView: View {
                 }
             }
             .navigationTitle("SoundBase")
+            .navigationDestination(for: WatchRoute.self) { route in
+                switch route {
+                case .remote: RemoteView()
+                case .nowPlaying: NowPlayingView()
+                case .downloaded: DownloadedWatchView()
+                case .playlists: PlaylistsWatchView()
+                case .albums: AlbumsWatchView()
+                case .album(let id, let name):
+                    RemoteSongList(title: name) { client in (try? await client.album(id)?.song) ?? [] }
+                }
+            }
         }
     }
+}
+
+enum WatchRoute: Hashable {
+    case remote, nowPlaying, downloaded, playlists, albums
+    case album(id: String, name: String)
 }
 
 // MARK: - iPhone remote
@@ -259,11 +279,20 @@ struct PlayButtons: View {
     @Environment(WatchStore.self) private var store
 
     var body: some View {
-        HStack {
-            Button { store.player.play(songs) } label: { Image(systemName: "play.fill") }
-            Button { store.player.play(songs, shuffled: true) } label: { Image(systemName: "shuffle") }
+        HStack(spacing: 8) {
+            Button { store.player.play(songs) } label: {
+                Label("Play", systemImage: "play.fill").labelStyle(.iconOnly).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityLabel("Play")
+            Button { store.player.play(songs, shuffled: true) } label: {
+                Label("Shuffle", systemImage: "shuffle").labelStyle(.iconOnly).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Shuffle")
         }
         .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
     }
 }
 

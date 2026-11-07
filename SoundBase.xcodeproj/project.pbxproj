@@ -12,6 +12,7 @@
 		0E10B7F1D609E979A61ED50E /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F4BE5881B16F359A73C250 /* Theme.swift */; };
 		0E39A2235737DDFCC98C89FB /* MacPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E34B3ED9A5EB97974B5588 /* MacPanels.swift */; };
 		13954272E1165F932900B2B7 /* MacScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA356D82BBFBC8A676868CC /* MacScreens.swift */; };
+		1478554E26317CB1F49EEF89 /* WatchScreenshotDirector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59C30DF0FDA2A3767289B8F0 /* WatchScreenshotDirector.swift */; };
 		16CF96282507B2C26849812D /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16F70586B77D514923BC3AE0 /* Components.swift */; };
 		179AEB4C76DBAD6FF6630CA5 /* WatchModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1461B2C2CECE47ABD7217AE9 /* WatchModels.swift */; };
 		18072C4F6348D5A17A5E975F /* WatchProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8E321E18CEC681B48880C5 /* WatchProtocol.swift */; };
@@ -107,6 +108,7 @@
 		45DE261B968E2D03F829352D /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		49F4BE5881B16F359A73C250 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		5163F3CFCE0BE69051266469 /* LibraryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViews.swift; sourceTree = "<group>"; };
+		59C30DF0FDA2A3767289B8F0 /* WatchScreenshotDirector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchScreenshotDirector.swift; sourceTree = "<group>"; };
 		5B3DBBC5BF404545CD65A920 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		5BA356D82BBFBC8A676868CC /* MacScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacScreens.swift; sourceTree = "<group>"; };
 		5D0216FDB2294B62362A40F1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -223,6 +225,7 @@
 				E5628C6057AE9A218288F02E /* Info.plist */,
 				1B94F10A392983982B4DB59B /* PrivacyInfo.xcprivacy */,
 				1461B2C2CECE47ABD7217AE9 /* WatchModels.swift */,
+				59C30DF0FDA2A3767289B8F0 /* WatchScreenshotDirector.swift */,
 				8BD0643679FDBC462AA31648 /* WatchViews.swift */,
 			);
 			path = SoundBaseWatch;
@@ -488,6 +491,7 @@
 				D16117FF95D7E3390724DD3C /* Theme.swift in Sources */,
 				179AEB4C76DBAD6FF6630CA5 /* WatchModels.swift in Sources */,
 				DD4173100AF3F4229041B46A /* WatchProtocol.swift in Sources */,
+				1478554E26317CB1F49EEF89 /* WatchScreenshotDirector.swift in Sources */,
 				C1A4706664184F69B9F149D1 /* WatchViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

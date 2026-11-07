@@ -13,6 +13,7 @@ final class WatchStore {
     private(set) var downloads: [String: Song] = [:]
     private(set) var inProgress: Set<String> = []
     let player = WatchPlayer()
+    var path: [WatchRoute] = []
 
     @ObservationIgnored private var pending: [Song] = []
     @ObservationIgnored private var active = 0
@@ -29,6 +30,7 @@ final class WatchStore {
         }
         if let data = UserDefaults.standard.data(forKey: credsKey) { setCredentials(data) }
         player.urlProvider = { [weak self] song in self?.playbackURL(for: song) }
+        player.artworkProvider = { [weak self] song in await self?.artwork(for: song) }
     }
 
     func setCredentials(_ data: Data) {
@@ -111,6 +113,10 @@ final class WatchStore {
         try? FileManager.default.removeItem(at: dest)
         guard (try? FileManager.default.moveItem(at: tmp, to: dest)) != nil else { return }
         downloads[song.id] = stored
+        if let cover = song.coverArt, !FileManager.default.fileExists(atPath: coverURL(cover).path),
+           let (data, _) = try? await URLSession.shared.data(from: client.coverURL(cover, size: 300)) {
+            try? data.write(to: coverURL(cover))
+        }
         persist()
     }
 
@@ -118,6 +124,16 @@ final class WatchStore {
 
     private func fileURL(_ id: String) -> URL {
         downloads[id].map(fileURL) ?? dir.appendingPathComponent("\(id).aac")
+    }
+
+    private func coverURL(_ id: String) -> URL { dir.appendingPathComponent("cover-\(id).jpg") }
+
+    /// Album artwork for Now Playing: saved with downloads, otherwise fetched from the server.
+    func artwork(for song: Song) async -> UIImage? {
+        guard let cover = song.coverArt else { return nil }
+        if let data = try? Data(contentsOf: coverURL(cover)) { return UIImage(data: data) }
+        guard let client, let (data, _) = try? await URLSession.shared.data(from: client.coverURL(cover, size: 300)) else { return nil }
+        return UIImage(data: data)
     }
 
     private func fileURL(_ song: Song) -> URL {
@@ -141,6 +157,8 @@ final class WatchPlayer {
     var current: Song? { queue.indices.contains(index) ? queue[index] : nil }
 
     @ObservationIgnored var urlProvider: ((Song) -> URL?)?
+    @ObservationIgnored var artworkProvider: ((Song) async -> UIImage?)?
+    @ObservationIgnored private var artwork: (id: String, image: UIImage)?
     @ObservationIgnored private let av = AVQueuePlayer()
     @ObservationIgnored private var kvo: NSKeyValueObservation?
 
@@ -199,6 +217,12 @@ final class WatchPlayer {
         av.insert(AVPlayerItem(url: url), after: nil)
         av.play()
         updateNowPlaying()
+        let id = song.id
+        Task {
+            guard let image = await artworkProvider?(song), current?.id == id else { return }
+            artwork = (id, image)
+            updateNowPlaying()
+        }
     }
 
     private func syncStatus() {
@@ -208,7 +232,7 @@ final class WatchPlayer {
 
     private func updateNowPlaying() {
         guard let song = current else { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; return }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+        var info: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
             MPMediaItemPropertyArtist: song.artist ?? "",
             MPMediaItemPropertyAlbumTitle: song.album ?? "",
@@ -216,6 +240,13 @@ final class WatchPlayer {
             MPNowPlayingInfoPropertyElapsedPlaybackTime: av.currentTime().seconds.isFinite ? av.currentTime().seconds : 0,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
         ]
+        if let artwork, artwork.id == song.id { info[MPMediaItemPropertyArtwork] = Self.mediaArtwork(artwork.image) }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    /// Built outside the main actor: MediaPlayer may call the handler on a background thread.
+    nonisolated private static func mediaArtwork(_ image: UIImage) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: image.size) { _ in image }
     }
 }
 
