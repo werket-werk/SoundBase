@@ -83,12 +83,30 @@ struct SettingsView: View {
     @AppStorage(Pref.format) private var format = "raw"
     @AppStorage(Pref.replayGain) private var replayGain = 0
     @AppStorage(Pref.downloadQuality) private var downloadQuality = Pref.defaultDownloadQuality
+    @AppStorage(AccentTheme.storageKey) private var accent = AccentTheme.fallback.rawValue
+    @AppStorage(AppearanceMode.storageKey) private var appearance = AppearanceMode.system.rawValue
+    @AppStorage(NowPlayingStyle.storageKey) private var nowPlayingStyle = NowPlayingStyle.blurredArtwork.rawValue
+    @AppStorage(AppIconSwitcher.matchKey) private var iconMatchesAccent = true
     @State private var confirmSignOut = false
 
     var body: some View {
         @Bindable var player = model.player
         NavigationStack {
             Form {
+                Section {
+                    Picker("Appearance", selection: $appearance) {
+                        ForEach(AppearanceMode.allCases) { Text($0.name).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented)
+                    .listRowSeparator(.hidden)
+                    AccentPicker(selection: $accent)
+                    Toggle("App Icon Matches Colour", isOn: $iconMatchesAccent)
+                    Picker("Now Playing Background", selection: $nowPlayingStyle) {
+                        ForEach(NowPlayingStyle.allCases) { Text($0.name).tag($0.rawValue) }
+                    }
+                } header: { Text("Appearance") } footer: {
+                    Text("The home screen icon changes to match the colour you pick. iOS shows a short confirmation when it changes. The Apple Watch app uses the same colour, but watchOS doesn't allow changing its icon.")
+                }
                 Section("Server") {
                     LabeledContent("Address", value: model.credentials?.url.host ?? "")
                     LabeledContent("User", value: model.credentials?.username ?? "")
@@ -143,6 +161,8 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("Done") { dismiss() } }
+            .onChange(of: accent) { _, new in AppIconSwitcher.apply(AccentTheme.from(new)) }
+            .onChange(of: iconMatchesAccent) { _, _ in AppIconSwitcher.apply(AccentTheme.from(accent)) }
             .confirmationDialog("Sign out of this server?", isPresented: $confirmSignOut, titleVisibility: .visible) {
                 Button("Sign Out", role: .destructive) {
                     dismiss()
@@ -238,5 +258,40 @@ struct LoginView: View {
             }
             busy = false
         }
+    }
+}
+
+// MARK: - Accent picker
+
+struct AccentPicker: View {
+    @Binding var selection: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Colour")
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 6), spacing: 12) {
+                ForEach(AccentTheme.allCases) { theme in
+                    Button {
+                        withAnimation(.snappy) { selection = theme.rawValue }
+                    } label: {
+                        Circle()
+                            .fill(theme.color.gradient)
+                            .frame(width: 36, height: 36)
+                            .overlay {
+                                if selection == theme.rawValue {
+                                    Image(systemName: "checkmark").font(.footnote.bold()).foregroundStyle(.white)
+                                }
+                            }
+                            .overlay {
+                                Circle().stroke(theme.color, lineWidth: selection == theme.rawValue ? 2 : 0).padding(-4)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(theme.name)
+                    .accessibilityAddTraits(selection == theme.rawValue ? .isSelected : [])
+                }
+            }
+        }
+        .padding(.vertical, 6)
     }
 }

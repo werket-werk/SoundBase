@@ -12,6 +12,7 @@ struct SoundBaseWatchApp: App {
                 .environment(store)
                 .environment(store.player)
                 .environment(session)
+                .tint(session.accent.color)
                 .onAppear { session.start(store: store) }
         }
     }
@@ -92,7 +93,6 @@ struct RemoteView: View {
                         Spacer(minLength: 0)
                     }
                     ProgressView(value: session.elapsed(at: ctx.date), total: max(session.duration, 1))
-                        .tint(.accentColor)
                     HStack {
                         Button { session.send(.previous) } label: { Image(systemName: "backward.fill") }
                         Button { session.send(.togglePlay) } label: {
@@ -115,7 +115,7 @@ struct RemoteView: View {
                 }
                 .padding(.horizontal, 4)
             }
-            .containerBackground(Color.accentColor.gradient.opacity(0.5), for: .tabView)
+            .containerBackground(session.accent.color.gradient.opacity(0.5), for: .tabView)
 
             List {
                 Section("Up Next") {
@@ -278,7 +278,7 @@ struct WatchSongRow: View {
             HStack {
                 VStack(alignment: .leading) {
                     Text(song.title).lineLimit(1)
-                        .foregroundStyle(player.current?.id == song.id ? Color.accentColor : .primary)
+                        .foregroundStyle(player.current?.id == song.id ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
                     Text(song.artist ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)

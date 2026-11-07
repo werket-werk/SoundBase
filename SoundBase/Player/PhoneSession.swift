@@ -23,7 +23,8 @@ final class PhoneSession: NSObject, WCSessionDelegate {
         guard WCSession.isSupported() else { return }
         let session = WCSession.default
         guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
-        let state = currentState()
+        var state = currentState()
+        state[WatchKey.accent] = UserDefaults.standard.string(forKey: AccentTheme.storageKey) ?? AccentTheme.fallback.rawValue
         try? session.updateApplicationContext(state)
         if session.isReachable { session.sendMessage(state, replyHandler: nil, errorHandler: nil) }
     }

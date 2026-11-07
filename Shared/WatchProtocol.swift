@@ -15,6 +15,7 @@ enum WatchKey {
     static let command = "cmd"
     static let index = "index"
     static let credentials = "creds"
+    static let accent = "accent"
 }
 
 enum WatchCommand: String {

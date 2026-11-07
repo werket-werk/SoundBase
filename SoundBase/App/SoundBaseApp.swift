@@ -3,6 +3,8 @@ import SwiftUI
 @main
 struct SoundBaseApp: App {
     @State private var model = AppModel()
+    @AppStorage(AccentTheme.storageKey) private var accent = AccentTheme.fallback.rawValue
+    @AppStorage(AppearanceMode.storageKey) private var appearance = AppearanceMode.system.rawValue
 
     init() {
         URLCache.shared = URLCache(memoryCapacity: 64 << 20, diskCapacity: 1 << 30)
@@ -16,6 +18,9 @@ struct SoundBaseApp: App {
                 .environment(model.router)
                 .environment(model.downloads)
                 .environment(CastManager.shared)
+                .tint(AccentTheme.from(accent).color)
+                .preferredColorScheme(AppearanceMode(rawValue: appearance)?.colorScheme)
+                .onChange(of: accent) { _, _ in PhoneSession.shared.push() }
         }
     }
 }

@@ -292,7 +292,7 @@ struct PlayShuffleButtons: View {
         .buttonStyle(.bordered)
         .buttonBorderShape(.roundedRectangle(radius: 12))
         .controlSize(.large)
-        .tint(.accentColor)
+
     }
 }
 

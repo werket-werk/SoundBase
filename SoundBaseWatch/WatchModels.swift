@@ -233,6 +233,7 @@ final class WatchSession: NSObject, WCSessionDelegate {
     var artwork: UIImage?
     var upNext: [String] = []
     var reachable = false
+    var accent = AccentTheme.from(UserDefaults.standard.string(forKey: AccentTheme.storageKey))
 
     @ObservationIgnored weak var store: WatchStore?
 
@@ -266,6 +267,10 @@ final class WatchSession: NSObject, WCSessionDelegate {
 
     func apply(_ ctx: [String: Any]) {
         if let creds = ctx[WatchKey.credentials] as? Data, !creds.isEmpty { store?.setCredentials(creds) }
+        if let raw = ctx[WatchKey.accent] as? String, raw != accent.rawValue {
+            accent = AccentTheme.from(raw)
+            UserDefaults.standard.set(raw, forKey: AccentTheme.storageKey)
+        }
         guard let t = ctx[WatchKey.title] as? String else { return }
         title = t
         artist = ctx[WatchKey.artist] as? String ?? ""

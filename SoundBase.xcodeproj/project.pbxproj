@@ -32,9 +32,12 @@
 		99C052CECBDEB37229DBCEEB /* GoogleCastOptionalUIResources.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 19A063179F9A86AD9C4DA619 /* GoogleCastOptionalUIResources.bundle */; };
 		A36862D0FF3D509878832864 /* WatchProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8E321E18CEC681B48880C5 /* WatchProtocol.swift */; };
 		A8360CB437C006B34607498A /* SubsonicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB56A19DD31AB29706E4867 /* SubsonicClient.swift */; };
+		B29D27EA9DC07EB7443BECA1 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F4BE5881B16F359A73C250 /* Theme.swift */; };
 		B8AC2C3FE0E76EFDBFABDA36 /* Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = A930F5650ED5F9B9720F4E9C /* Support.swift */; };
 		C1A4706664184F69B9F149D1 /* WatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BD0643679FDBC462AA31648 /* WatchViews.swift */; };
+		C9AE982FA36D0F860686E73C /* ThemeSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 261C1261D3DFDFF166642E49 /* ThemeSupport.swift */; };
 		CC5A9E89C569C5D34EECBA2F /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3447B2362E6B1935547798 /* DownloadManager.swift */; };
+		D16117FF95D7E3390724DD3C /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F4BE5881B16F359A73C250 /* Theme.swift */; };
 		D7A6E0C4CDBA37C24BA3DFA1 /* GoogleSansRegular.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 17115C095C5A2BFABEFE7E0B /* GoogleSansRegular.bundle */; };
 		DD4173100AF3F4229041B46A /* WatchProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8E321E18CEC681B48880C5 /* WatchProtocol.swift */; };
 		E4793CFB7784E49C75860340 /* DetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4FCE0A9E2FCFCF2754FADB /* DetailViews.swift */; };
@@ -74,9 +77,11 @@
 		16F70586B77D514923BC3AE0 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		17115C095C5A2BFABEFE7E0B /* GoogleSansRegular.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleSansRegular.bundle; sourceTree = "<group>"; };
 		19A063179F9A86AD9C4DA619 /* GoogleCastOptionalUIResources.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleCastOptionalUIResources.bundle; sourceTree = "<group>"; };
+		261C1261D3DFDFF166642E49 /* ThemeSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSupport.swift; sourceTree = "<group>"; };
 		2B16A81B00050C171C9780A4 /* PhoneSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneSession.swift; sourceTree = "<group>"; };
 		32CE73DB370EFEEF4DEEFA43 /* GoogleSansBold.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleSansBold.bundle; sourceTree = "<group>"; };
 		45DE261B968E2D03F829352D /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		49F4BE5881B16F359A73C250 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		5163F3CFCE0BE69051266469 /* LibraryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViews.swift; sourceTree = "<group>"; };
 		5D0216FDB2294B62362A40F1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		633EAACF100D6F58053DC766 /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
@@ -154,6 +159,7 @@
 			isa = PBXGroup;
 			children = (
 				A930F5650ED5F9B9720F4E9C /* Support.swift */,
+				261C1261D3DFDFF166642E49 /* ThemeSupport.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -184,6 +190,7 @@
 		A7AFBB208BEACE3AE1695193 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				49F4BE5881B16F359A73C250 /* Theme.swift */,
 				0E8E321E18CEC681B48880C5 /* WatchProtocol.swift */,
 				D73BF90F5A511CAA3651EC92 /* API */,
 			);
@@ -372,6 +379,8 @@
 				06663BA99612A5B8766827BA /* SoundBaseApp.swift in Sources */,
 				A8360CB437C006B34607498A /* SubsonicClient.swift in Sources */,
 				B8AC2C3FE0E76EFDBFABDA36 /* Support.swift in Sources */,
+				B29D27EA9DC07EB7443BECA1 /* Theme.swift in Sources */,
+				C9AE982FA36D0F860686E73C /* ThemeSupport.swift in Sources */,
 				A36862D0FF3D509878832864 /* WatchProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -382,6 +391,7 @@
 			files = (
 				270D40CEC91243469FFF74B8 /* Models.swift in Sources */,
 				56671AABD194F1CA24CC014C /* SubsonicClient.swift in Sources */,
+				D16117FF95D7E3390724DD3C /* Theme.swift in Sources */,
 				179AEB4C76DBAD6FF6630CA5 /* WatchModels.swift in Sources */,
 				DD4173100AF3F4229041B46A /* WatchProtocol.swift in Sources */,
 				C1A4706664184F69B9F149D1 /* WatchViews.swift in Sources */,
@@ -483,8 +493,10 @@
 		AB362E94B8CF8CB17F1685B5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Red AppIcon-Orange AppIcon-Amber AppIcon-Green AppIcon-Mint AppIcon-Teal AppIcon-Blue AppIcon-Indigo AppIcon-Purple AppIcon-Graphite";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -522,8 +534,10 @@
 		F2ED323CBDF9FAA49CA2CB0F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Red AppIcon-Orange AppIcon-Amber AppIcon-Green AppIcon-Mint AppIcon-Teal AppIcon-Blue AppIcon-Indigo AppIcon-Purple AppIcon-Graphite";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
