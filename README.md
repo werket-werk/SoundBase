@@ -1,6 +1,6 @@
 # SoundBase
 
-A native iPhone and Apple Watch player for [Navidrome](https://www.navidrome.org) and any OpenSubsonic server, built in SwiftUI.
+A free, open-source iPhone, Apple Watch and Mac player for [Navidrome](https://www.navidrome.org) and any OpenSubsonic server, built in SwiftUI.
 
 ## Features
 
@@ -14,6 +14,13 @@ A native iPhone and Apple Watch player for [Navidrome](https://www.navidrome.org
 - Gapless playback (AVQueuePlayer with preloading), ReplayGain, transcoding options
 - Offline downloads with a space-saving AAC quality setting (Original, 256, 192 or 128 kbps), offline scrobble queue, play queue synced with the server across devices
 - Lock screen and Control Center controls, favourites (stars), playlists (create, add, remove, delete)
+
+**Mac**
+- Sidebar library (Home, New, Radio, Artists, Albums, Songs, Genres, Favourites, Downloaded, Playlists)
+- Native song tables, lyrics and Playing Next side panel, menu bar mini player, keyboard shortcuts
+
+**Themes**
+- Light/Dark/System, 11 accent colours with matching iPhone app icons, Now Playing background styles
 
 **Apple Watch**
 - Standalone: browse playlists, albums, favourites, and download music to the Watch (AAC 128 kbps) to play over Bluetooth headphones without the iPhone
@@ -31,3 +38,15 @@ open SoundBase.xcodeproj
 ```
 
 Passwords are never stored. The app keeps only the Subsonic salted token (in the Keychain on iPhone).
+
+## Website
+
+The website (landing page, privacy policy, support, terms) lives in `docs/` and is served by GitHub Pages. Edit `scripts/build-site.py` and run `python3 scripts/build-site.py` to regenerate it.
+
+## App Store
+
+See [APP_STORE.md](APP_STORE.md) for the listing copy, privacy answers and submission checklist.
+
+## Licence
+
+[MIT](LICENSE). The Google Cast SDK is proprietary and fetched separately by `scripts/fetch-googlecast.sh`.

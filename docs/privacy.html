@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — SoundBase</title>
+<meta name="description" content="How SoundBase handles your information.">
+<meta property="og:title" content="Privacy Policy — SoundBase">
+<meta property="og:description" content="How SoundBase handles your information.">
+<meta property="og:image" content="assets/icon.png">
+<link rel="icon" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/icon.png">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="nav"><div class="wrap">
+  <a class="brand" href="index.html"><img src="assets/icon.png" alt="">SoundBase</a>
+  <nav class="links">
+    <a href="index.html#features" class="hide-sm">Features</a>
+    <a href="support.html">Support</a>
+    <a href="privacy.html">Privacy</a>
+    <a href="https://github.com/werket-werk/SoundBase">GitHub</a>
+  </nav>
+</div></header>
+<main>
+
+<article class="doc"><div class="wrap">
+<h1>Privacy Policy</h1>
+<p class="updated">Last updated 8 November 2026</p>
+
+<div class="callout"><strong>In short:</strong> SoundBase has no accounts, no ads and no analytics of its own. It connects only to the music server you enter. The developer never receives your music, your listening history or your login. The one exception is Google Cast on iPhone, described below.</div>
+
+<p>This policy explains how the SoundBase apps for iPhone, Apple Watch and Mac (“SoundBase”, “the app”) handle information. SoundBase is free, open-source software. You can check everything described here in the <a href="https://github.com/werket-werk/SoundBase">source code</a>.</p>
+
+<h2>1. Information the app handles</h2>
+<h3>Your server address and login</h3>
+<p>To connect, you enter your server address, username and password. SoundBase does not store your password. It turns it into a salted token, the standard Subsonic authentication method, and stores only the server address, username and that token. They are kept on your device in the system Keychain on iPhone and Mac. They are shared with the SoundBase Apple Watch app over Apple's encrypted WatchConnectivity link so the Watch can sign in.</p>
+
+<h3>Your music library and listening activity</h3>
+<p>SoundBase sends requests directly from your device to your server to browse your library, stream and download music, fetch artwork and lyrics, save playlists and favourites, sync your play queue, and report plays (“scrobbles”). This information goes only to the server you chose. It is governed by that server's operator, who is usually you, and the developer never receives it.</p>
+
+<h3>Data stored on your device</h3>
+<p>Downloaded songs, cached artwork, your settings (for example theme and streaming quality) and a short list of plays waiting to be sent to your server while you're offline are stored only on your device. They are removed when you delete the app.</p>
+
+<h2>2. Information the developer collects</h2>
+<p><strong>None.</strong> The developer does not operate any servers for SoundBase and does not collect, store, sell or share personal information. SoundBase contains no advertising, analytics or tracking code written by the developer.</p>
+
+<h2>3. Third-party services</h2>
+<h3>Google Cast (iPhone only)</h3>
+<p>The iPhone app includes Google's Cast SDK so you can play music on Chromecast, Google TV and Nest devices. To find and talk to Cast devices on your local network, the Cast SDK may collect and send to Google:</p>
+<ul>
+  <li>a device identifier</li>
+  <li>diagnostic data, such as crash and performance information</li>
+  <li>product interaction data, such as how Cast features are used</li>
+</ul>
+<p>Google says this data is used for app functionality and analytics. It is <strong>not linked to your identity</strong> and is <strong>not used for tracking</strong>. When you cast, the Cast device streams music directly from your server. Google's handling of this data is covered by the <a href="https://policies.google.com/privacy">Google Privacy Policy</a>. The Apple Watch and Mac apps don't include the Cast SDK.</p>
+
+<h3>Your music server</h3>
+<p>Your server may use other services, such as Last.fm or similar sources for artist images, biographies and similar songs. Those are configured and controlled on your server, not by SoundBase.</p>
+
+<h3>Apple</h3>
+<p>If you download SoundBase from the App Store, Apple may provide the developer with aggregated, anonymous statistics and crash reports, but only if you've chosen to share them with app developers. See <a href="https://www.apple.com/legal/privacy/">Apple's Privacy Policy</a>.</p>
+
+<h2>4. Permissions</h2>
+<table>
+  <tr><th>Permission</th><th>Why</th></tr>
+  <tr><td>Local Network (iPhone)</td><td>To find Chromecast and Google TV devices on your network when you want to cast.</td></tr>
+  <tr><td>Background audio</td><td>To keep playing music when the app is in the background or the screen is locked.</td></tr>
+  <tr><td>Network access</td><td>To connect to your music server.</td></tr>
+</table>
+
+<h2>5. Children</h2>
+<p>SoundBase doesn't knowingly collect personal information from anyone, including children under 13 (or the equivalent age where you live).</p>
+
+<h2>6. Your choices</h2>
+<ul>
+  <li>Sign out in Settings to remove your server login from the device.</li>
+  <li>Delete downloads in Settings or Library › Downloaded.</li>
+  <li>Don't use casting if you'd rather the Cast SDK didn't run. Deleting the app removes everything it stored.</li>
+  <li>Data held by your music server can be managed or deleted by that server's administrator.</li>
+</ul>
+
+<h2>7. Security</h2>
+<p>Use an <code>https://</code> server address so traffic between the app and your server is encrypted. SoundBase can connect to plain <code>http://</code> servers, for example on your home network, but that traffic isn't encrypted.</p>
+
+<h2>8. Changes to this policy</h2>
+<p>If this policy changes, the updated version will be posted on this page with a new “Last updated” date. Its history is also visible in the project's public repository.</p>
+
+<h2>9. Contact</h2>
+<p>Questions about privacy? Email <a href="mailto:hello@lunero.com.au">hello@lunero.com.au</a> or <a href="https://github.com/werket-werk/SoundBase/issues">open an issue on GitHub</a>.</p>
+</div></article>
+
+</main>
+<footer><div class="wrap">
+  <span>© 2026 SoundBase. Free and open source under the MIT License.</span>
+  <span class="links"><a href="privacy.html">Privacy Policy</a><a href="terms.html">Terms of Use</a><a href="support.html">Support</a><a href="https://github.com/werket-werk/SoundBase">Source Code</a></span>
+  <span class="fine">SoundBase is an independent project and is not affiliated with or endorsed by Navidrome, Subsonic, Apple or Google. Apple, iPhone, Apple Watch, Mac, AirPlay and App Store are trademarks of Apple Inc. Google Cast and Chromecast are trademarks of Google LLC.</span>
+</div></footer>
+</body>
+</html>

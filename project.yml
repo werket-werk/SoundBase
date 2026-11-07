@@ -41,6 +41,7 @@ targets:
       path: SoundBase/Info.plist
       properties:
         CFBundleDisplayName: SoundBase
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         NSAppTransportSecurity:
@@ -73,6 +74,7 @@ targets:
       properties:
         CFBundleDisplayName: SoundBase
         WKApplication: true
+        ITSAppUsesNonExemptEncryption: false
         WKCompanionAppBundleIdentifier: com.lunero.SoundBase
         UIBackgroundModes: [audio]
     settings:

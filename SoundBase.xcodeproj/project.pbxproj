@@ -36,6 +36,7 @@
 		5FC8AFAA05C08D39543A943B /* SoundBaseMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE193FE1D283B8A5C6C8FC5D /* SoundBaseMacApp.swift */; };
 		7A74CF60625DF8CF18502B82 /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3447B2362E6B1935547798 /* DownloadManager.swift */; };
 		7EF73324E8DBB1B0282C4E24 /* HomeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7ECAA731EDE5CB18EF281C /* HomeViews.swift */; };
+		832040A70687525CA89CE848 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1B94F10A392983982B4DB59B /* PrivacyInfo.xcprivacy */; };
 		8735676CED4AD3A66359A545 /* CastManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE540BB2A71752E13E61E9A /* CastManager.swift */; };
 		966BE44ED76A17E4F6FB0086 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F9E2820352F1876F66976BDD /* Assets.xcassets */; };
 		97A3AFCBE698A4022526AA2A /* Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = A930F5650ED5F9B9720F4E9C /* Support.swift */; };
@@ -47,8 +48,10 @@
 		B29D27EA9DC07EB7443BECA1 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F4BE5881B16F359A73C250 /* Theme.swift */; };
 		B4592F5E7C6FAF5A134D72C9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D5E38D110A7362502AEDCCF4 /* Assets.xcassets */; };
 		B8AC2C3FE0E76EFDBFABDA36 /* Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = A930F5650ED5F9B9720F4E9C /* Support.swift */; };
+		C0E447CE85FFDB26335987D2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5B3DBBC5BF404545CD65A920 /* PrivacyInfo.xcprivacy */; };
 		C1A4706664184F69B9F149D1 /* WatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BD0643679FDBC462AA31648 /* WatchViews.swift */; };
 		C9AE982FA36D0F860686E73C /* ThemeSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 261C1261D3DFDFF166642E49 /* ThemeSupport.swift */; };
+		CAF104A2A7CF3169562A8598 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 86FE0C958F5965B58D194A90 /* PrivacyInfo.xcprivacy */; };
 		CC5A9E89C569C5D34EECBA2F /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3447B2362E6B1935547798 /* DownloadManager.swift */; };
 		D16117FF95D7E3390724DD3C /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F4BE5881B16F359A73C250 /* Theme.swift */; };
 		D7A6E0C4CDBA37C24BA3DFA1 /* GoogleSansRegular.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 17115C095C5A2BFABEFE7E0B /* GoogleSansRegular.bundle */; };
@@ -95,6 +98,7 @@
 		16F70586B77D514923BC3AE0 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		17115C095C5A2BFABEFE7E0B /* GoogleSansRegular.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleSansRegular.bundle; sourceTree = "<group>"; };
 		19A063179F9A86AD9C4DA619 /* GoogleCastOptionalUIResources.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleCastOptionalUIResources.bundle; sourceTree = "<group>"; };
+		1B94F10A392983982B4DB59B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		2357D6719402FA95995C0FCC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		261C1261D3DFDFF166642E49 /* ThemeSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSupport.swift; sourceTree = "<group>"; };
 		2B16A81B00050C171C9780A4 /* PhoneSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneSession.swift; sourceTree = "<group>"; };
@@ -102,6 +106,7 @@
 		45DE261B968E2D03F829352D /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		49F4BE5881B16F359A73C250 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		5163F3CFCE0BE69051266469 /* LibraryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViews.swift; sourceTree = "<group>"; };
+		5B3DBBC5BF404545CD65A920 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		5BA356D82BBFBC8A676868CC /* MacScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacScreens.swift; sourceTree = "<group>"; };
 		5D0216FDB2294B62362A40F1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		633EAACF100D6F58053DC766 /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
@@ -109,6 +114,7 @@
 		72222EF7B5214B0052D9004D /* MacStubs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacStubs.swift; sourceTree = "<group>"; };
 		7A69B58A196E929771115034 /* MaterialDialogs.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = MaterialDialogs.bundle; sourceTree = "<group>"; };
 		84AA95C2F69173E0B3B6E8A9 /* GoogleSansMedium.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = GoogleSansMedium.bundle; sourceTree = "<group>"; };
+		86FE0C958F5965B58D194A90 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		8BD0643679FDBC462AA31648 /* WatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchViews.swift; sourceTree = "<group>"; };
 		8F0FF4A8C7112245CCB9229A /* SoundBaseWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SoundBaseWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A21910DF1518DE9B5D0705B4 /* MacComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacComponents.swift; sourceTree = "<group>"; };
@@ -151,6 +157,7 @@
 			children = (
 				F9E2820352F1876F66976BDD /* Assets.xcassets */,
 				0FD7F303E250564189D025CB /* Info.plist */,
+				5B3DBBC5BF404545CD65A920 /* PrivacyInfo.xcprivacy */,
 				EF6065088966D05C2B92FF9B /* App */,
 				CD959F64B348A8B4B0730286 /* Player */,
 				89CA38706A0BECB10D379DF7 /* Support */,
@@ -191,6 +198,7 @@
 				01E34B3ED9A5EB97974B5588 /* MacPanels.swift */,
 				5BA356D82BBFBC8A676868CC /* MacScreens.swift */,
 				72222EF7B5214B0052D9004D /* MacStubs.swift */,
+				86FE0C958F5965B58D194A90 /* PrivacyInfo.xcprivacy */,
 				A3EC0E5D7697EC97178B4F1A /* SoundBaseMac.entitlements */,
 				EE193FE1D283B8A5C6C8FC5D /* SoundBaseMacApp.swift */,
 			);
@@ -211,6 +219,7 @@
 			children = (
 				5D0216FDB2294B62362A40F1 /* Assets.xcassets */,
 				E5628C6057AE9A218288F02E /* Info.plist */,
+				1B94F10A392983982B4DB59B /* PrivacyInfo.xcprivacy */,
 				1461B2C2CECE47ABD7217AE9 /* WatchModels.swift */,
 				8BD0643679FDBC462AA31648 /* WatchViews.swift */,
 			);
@@ -407,6 +416,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B4592F5E7C6FAF5A134D72C9 /* Assets.xcassets in Resources */,
+				CAF104A2A7CF3169562A8598 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -422,6 +432,7 @@
 				0AEACEED8D44C256D12BCFF4 /* GoogleSansMedium.bundle in Resources */,
 				D7A6E0C4CDBA37C24BA3DFA1 /* GoogleSansRegular.bundle in Resources */,
 				2EB194C428C2CBEB5CEF5166 /* MaterialDialogs.bundle in Resources */,
+				C0E447CE85FFDB26335987D2 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -430,6 +441,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				370E8FDDF45BFEB0F21092F5 /* Assets.xcassets in Resources */,
+				832040A70687525CA89CE848 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
