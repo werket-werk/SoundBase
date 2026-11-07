@@ -1,13 +1,13 @@
 # App Store submission guide
 
-Everything App Store Connect asks for, ready to paste. One app record covers iPhone, Apple Watch and Mac (universal purchase: all three targets use the bundle ID `com.lunero.SoundBase`).
+Everything App Store Connect asks for, ready to paste. One app record covers iPhone, Apple Watch and Mac (universal purchase: all three targets use the bundle ID `com.werket.soundbase`).
 
 ## 1. Before you submit
 
 - [ ] Make the GitHub repo public (the app is open source and the website links to it).
 - [ ] Turn on GitHub Pages: repo **Settings → Pages → Deploy from branch → `main` / `/docs`**. The site will be at `https://werket-werk.github.io/SoundBase/`. A custom domain can be set there too.
 - [ ] In Xcode → Settings → Accounts, make sure your Apple Account is signed in for team **225KXPVW4C**.
-- [ ] In App Store Connect → Apps → **+ New App**: platforms iOS + macOS, name below, bundle ID `com.lunero.SoundBase`, SKU `soundbase`.
+- [ ] In App Store Connect → Apps → **+ New App**: platforms iOS + macOS, name below, bundle ID `com.werket.soundbase`, SKU `soundbase`.
 - [ ] Run `./scripts/fetch-googlecast.sh` and `xcodegen generate`, then archive the **SoundBase** scheme (iOS + Watch) and the **SoundBaseMac** scheme, and upload both.
 - [ ] Take screenshots (sizes in section 6).
 

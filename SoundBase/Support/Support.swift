@@ -10,7 +10,7 @@ import AppKit
 // MARK: - Keychain-backed credential storage
 
 enum CredentialStore {
-    private static let service = "com.lunero.SoundBase.server"
+    private static let service = "com.werket.soundbase.server"
     private static var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,

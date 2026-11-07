@@ -29,6 +29,6 @@
 	<key>WKApplication</key>
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>com.lunero.SoundBase</string>
+	<string>com.werket.soundbase</string>
 </dict>
 </plist>

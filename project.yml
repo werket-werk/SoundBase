@@ -1,6 +1,6 @@
 name: SoundBase
 options:
-  bundleIdPrefix: com.lunero
+  bundleIdPrefix: com.werket
   deploymentTarget:
     iOS: "18.0"
     watchOS: "11.0"
@@ -53,7 +53,7 @@ targets:
           UIApplicationSupportsMultipleScenes: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.lunero.SoundBase
+        PRODUCT_BUNDLE_IDENTIFIER: com.werket.soundbase
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         OTHER_LDFLAGS: ["$(inherited)", "-ObjC", "-lc++"]
@@ -75,11 +75,11 @@ targets:
         CFBundleDisplayName: SoundBase
         WKApplication: true
         ITSAppUsesNonExemptEncryption: false
-        WKCompanionAppBundleIdentifier: com.lunero.SoundBase
+        WKCompanionAppBundleIdentifier: com.werket.soundbase
         UIBackgroundModes: [audio]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.lunero.SoundBase.watchkitapp
+        PRODUCT_BUNDLE_IDENTIFIER: com.werket.soundbase.watchkitapp
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
   SoundBaseMac:
     type: application
@@ -104,7 +104,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: SoundBase
-        PRODUCT_BUNDLE_IDENTIFIER: com.lunero.SoundBase
+        PRODUCT_BUNDLE_IDENTIFIER: com.werket.soundbase
         CODE_SIGN_ENTITLEMENTS: SoundBaseMac/SoundBaseMac.entitlements
         ENABLE_HARDENED_RUNTIME: YES
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
