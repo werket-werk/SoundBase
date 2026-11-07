@@ -4,6 +4,10 @@ options:
   deploymentTarget:
     iOS: "18.0"
     watchOS: "11.0"
+packages:
+  GTMSessionFetcher:
+    url: https://github.com/google/gtm-session-fetcher
+    from: "5.0.0"
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -16,7 +20,23 @@ targets:
   SoundBase:
     type: application
     platform: iOS
-    sources: [SoundBase, Shared]
+    sources:
+      - SoundBase
+      - Shared
+      - path: Vendor/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/GoogleCastCoreResources.bundle
+        buildPhase: resources
+      - path: Vendor/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/GoogleCastUIResources.bundle
+        buildPhase: resources
+      - path: Vendor/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/GoogleCastOptionalUIResources.bundle
+        buildPhase: resources
+      - path: Vendor/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/GoogleSansBold.bundle
+        buildPhase: resources
+      - path: Vendor/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/GoogleSansMedium.bundle
+        buildPhase: resources
+      - path: Vendor/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/GoogleSansRegular.bundle
+        buildPhase: resources
+      - path: Vendor/GoogleCast.xcframework/ios-arm64/GoogleCast.framework/MaterialDialogs.bundle
+        buildPhase: resources
     info:
       path: SoundBase/Info.plist
       properties:
@@ -26,6 +46,8 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSLocalNetworkUsageDescription: SoundBase looks for Chromecast and Google TV devices on your network so you can cast music to them.
+        NSBonjourServices: [_googlecast._tcp, _CC1AD845._googlecast._tcp]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
     settings:
@@ -33,8 +55,13 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.lunero.SoundBase
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        OTHER_LDFLAGS: ["$(inherited)", "-ObjC", "-lc++"]
     dependencies:
       - target: SoundBaseWatch
+      - framework: Vendor/GoogleCast.xcframework
+        embed: false
+      - package: GTMSessionFetcher
+        product: GTMSessionFetcherCore
   SoundBaseWatch:
     type: application
     platform: watchOS

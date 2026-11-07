@@ -15,6 +15,7 @@ struct SoundBaseApp: App {
                 .environment(model.player)
                 .environment(model.router)
                 .environment(model.downloads)
+                .environment(CastManager.shared)
         }
     }
 }

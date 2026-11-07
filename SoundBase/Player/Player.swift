@@ -45,6 +45,8 @@ final class Player {
     @ObservationIgnored var onStateChange: (() -> Void)?
     @ObservationIgnored var onLove: (() -> Void)?
     @ObservationIgnored var radioURLs: [String: URL] = [:]
+    @ObservationIgnored weak var cast: CastManager?
+    var isCasting: Bool { cast?.isCasting == true }
 
     @ObservationIgnored private let avPlayer = AVQueuePlayer()
     @ObservationIgnored private var currentItem: AVPlayerItem?
@@ -187,9 +189,16 @@ final class Player {
 
     func togglePlayPause() { isPlaying ? pause() : resume() }
 
-    func pause() { avPlayer.pause() }
+    func pause() {
+        if let cast, cast.isCasting { cast.pause(); return }
+        avPlayer.pause()
+    }
 
     func resume() {
+        if let cast, cast.isCasting {
+            if current != nil, cast.isCasting, !isPlaying { cast.play() }
+            return
+        }
         if currentItem == nil, current != nil { startCurrent(); return }
         try? AVAudioSession.sharedInstance().setActive(true)
         avPlayer.play()
@@ -219,8 +228,12 @@ final class Player {
     }
 
     func seek(to seconds: Double) {
-        let t = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
-        avPlayer.seek(to: t, toleranceBefore: .zero, toleranceAfter: .zero)
+        if let cast, cast.isCasting {
+            cast.seek(to: max(0, seconds))
+        } else {
+            let t = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
+            avPlayer.seek(to: t, toleranceBefore: .zero, toleranceAfter: .zero)
+        }
         elapsed = max(0, seconds)
         updateNowPlaying()
         onStateChange?()
@@ -267,6 +280,18 @@ final class Player {
 
     private func startCurrent(autoPlay: Bool = true, at position: Double = 0) {
         guard let song = current else { stop(); return }
+        if let cast, cast.isCasting {
+            avPlayer.pause()
+            avPlayer.removeAllItems()
+            currentItem = nil
+            preloadedItem = nil
+            elapsed = position
+            duration = Double(song.duration ?? 0)
+            scrobbled = false
+            cast.load(Array(queue[index...].prefix(100)), position: position, autoplay: autoPlay)
+            trackChanged(announce: autoPlay)
+            return
+        }
         avPlayer.removeAllItems()
         preloadedItem = nil
         let item = makeItem(song)
@@ -372,10 +397,7 @@ final class Player {
         guard seconds.isFinite, currentItem != nil else { return }
         elapsed = seconds
         if let d = avPlayer.currentItem?.duration.seconds, d.isFinite, d > 0 { duration = d }
-        if !scrobbled, let song = current, !song.isRadio, duration > 30, elapsed >= min(duration / 2, 240) {
-            scrobbled = true
-            scrobble(song, submission: true)
-        }
+        checkScrobble()
         if abs(seconds - lastNowPlayingPush) > 15 {
             lastNowPlayingPush = seconds
             updateNowPlaying()
@@ -422,6 +444,58 @@ final class Player {
         queue.append(contentsOf: songs)
         if preloadedItem == nil, currentItem != nil { preloadNext() }
         onStateChange?()
+    }
+
+    // MARK: - Google Cast
+
+    /// Hands the current queue to the receiver and pauses local playback.
+    func castDidStart() {
+        guard current != nil else { return }
+        let wasPlaying = isPlaying
+        startCurrent(autoPlay: wasPlaying, at: elapsed)
+    }
+
+    /// Back to the phone, paused where the receiver left off.
+    func castDidEnd(position: Double) {
+        guard current != nil else { return }
+        startCurrent(autoPlay: false, at: position)
+        isPlaying = false
+    }
+
+    func castTick(position: Double) {
+        guard position.isFinite else { return }
+        elapsed = position
+        checkScrobble()
+    }
+
+    func castStatus(songID: String?, playing: Bool, position: Double) {
+        if isPlaying != playing {
+            isPlaying = playing
+            onStateChange?()
+        }
+        if position.isFinite { elapsed = position }
+        if let songID, songID != current?.id,
+           let i = queue[index...].firstIndex(where: { $0.id == songID }) ?? queue.firstIndex(where: { $0.id == songID }) {
+            if let current { history.append(current) }
+            index = i
+            duration = Double(current?.duration ?? 0)
+            scrobbled = false
+            trackChanged(announce: true)
+        }
+        updateNowPlaying()
+    }
+
+    /// The receiver played everything it was given; continue with the rest of the queue or Autoplay.
+    func castQueueFinished() {
+        guard isCasting else { return }
+        next()
+    }
+
+    private func checkScrobble() {
+        if !scrobbled, let song = current, !song.isRadio, duration > 30, elapsed >= min(duration / 2, 240) {
+            scrobbled = true
+            scrobble(song, submission: true)
+        }
     }
 
     // MARK: - ReplayGain

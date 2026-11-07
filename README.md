@@ -10,7 +10,7 @@ A native iPhone and Apple Watch player for [Navidrome](https://www.navidrome.org
 - Radio: Discovery and Favourites stations, artist stations, genre stations, Navidrome internet radio
 - Library: Playlists, Artists, Albums (sortable), Songs, Genres, Favourites, Downloaded
 - Search with top result, songs, albums and artists
-- Now Playing: blurred-artwork background, time-synced lyrics (tap a line to seek), Up Next with drag to reorder, shuffle, repeat, Autoplay similar music, AirPlay, lossless badge
+- Now Playing: blurred-artwork background, time-synced lyrics (tap a line to seek), Up Next with drag to reorder, shuffle, repeat, Autoplay similar music, AirPlay and Google Cast (Chromecast, Google TV, Nest speakers), lossless badge
 - Gapless playback (AVQueuePlayer with preloading), ReplayGain, transcoding options
 - Offline downloads with a space-saving AAC quality setting (Original, 256, 192 or 128 kbps), offline scrobble queue, play queue synced with the server across devices
 - Lock screen and Control Center controls, favourites (stars), playlists (create, add, remove, delete)
@@ -25,6 +25,7 @@ A native iPhone and Apple Watch player for [Navidrome](https://www.navidrome.org
 Requires Xcode 26+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```bash
+./scripts/fetch-googlecast.sh   # downloads Google's Cast SDK (~140 MB, checksum-verified) into Vendor/
 xcodegen generate
 open SoundBase.xcodeproj
 ```

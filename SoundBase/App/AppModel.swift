@@ -47,6 +47,9 @@ final class AppModel {
     var playlists: [Playlist] = []
 
     init() {
+        CastManager.shared.configure()
+        CastManager.shared.player = player
+        player.cast = CastManager.shared
         player.downloads = downloads
         player.onLove = { [weak self] in self?.toggleLoveCurrent() }
         PhoneSession.shared.attach(model: self)

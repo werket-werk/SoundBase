@@ -1,0 +1,15 @@
+{
+  "originHash" : "c945649bf4a0f520b55b1c6b346ba73219eb348657c75a3de3805de497319437",
+  "pins" : [
+    {
+      "identity" : "gtm-session-fetcher",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/google/gtm-session-fetcher",
+      "state" : {
+        "revision" : "724a52eea6329b7e12d3ad8300d76ca9f3895fcc",
+        "version" : "5.3.1"
+      }
+    }
+  ],
+  "version" : 3
+}

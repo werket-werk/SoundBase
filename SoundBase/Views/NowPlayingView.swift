@@ -47,6 +47,7 @@ struct NowPlayingView: View {
     @Environment(AppModel.self) private var model
     @Environment(Player.self) private var player
     @Environment(Router.self) private var router
+    @Environment(CastManager.self) private var cast
     @Environment(\.dismiss) private var dismiss
     @State private var panel: Panel = .none
 
@@ -81,6 +82,12 @@ struct NowPlayingView: View {
                     ScrubberView().padding(.top, 14)
                     TransportControls().padding(.vertical, 18)
                     VolumeRow()
+                    if cast.isCasting {
+                        Label("Casting to \(cast.deviceName ?? "TV")", systemImage: "tv.and.mediabox")
+                            .font(.footnote.weight(.semibold))
+                            .opacity(0.8)
+                            .padding(.top, 10)
+                    }
                     bottomBar.padding(.top, 18).padding(.bottom, 8)
                 } else {
                     Spacer()
@@ -159,6 +166,8 @@ struct NowPlayingView: View {
             panelButton(.lyrics, icon: "quote.bubble")
             Spacer()
             AirPlayButton().frame(width: 44, height: 44)
+            Spacer()
+            CastButton().frame(width: 44, height: 44)
             Spacer()
             panelButton(.queue, icon: "list.bullet")
             Spacer()
