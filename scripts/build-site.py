@@ -11,6 +11,7 @@ UPDATED = "8 November 2026"
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs"
 STYLE_VERSION = sha256((OUT / "assets/style.css").read_bytes()).hexdigest()[:12]
+GALLERY_VERSION = sha256((OUT / "assets/gallery.js").read_bytes()).hexdigest()[:12]
 
 
 def screenshot(filename, alt):
@@ -160,6 +161,23 @@ page("index", "SoundBase — Your Navidrome music, beautifully",
   <p class="section-lede">Explore the app on iPhone, Apple Watch and Mac. Select any screenshot to enlarge it.</p>
 {SCREENSHOTS}
 </div></section>
+
+<dialog id="screenshot-viewer" aria-labelledby="screenshot-viewer-title">
+  <div class="viewer-toolbar">
+    <span id="screenshot-viewer-title">SoundBase screenshots</span>
+    <form method="dialog"><button type="submit" aria-label="Close screenshot" autofocus>×</button></form>
+  </div>
+  <div class="viewer-stage"><img alt="" draggable="false"></div>
+  <div class="viewer-controls">
+    <button type="button" data-step="-1" aria-label="Previous screenshot">←</button>
+    <div class="viewer-caption" aria-live="polite" aria-atomic="true">
+      <span class="viewer-name"></span>
+      <span class="viewer-count"></span>
+    </div>
+    <button type="button" data-step="1" aria-label="Next screenshot">→</button>
+  </div>
+</dialog>
+<script src="assets/gallery.js?v={GALLERY_VERSION}" defer></script>
 
 <section class="soft"><div class="wrap privacy-banner">
   <div class="big">🔒</div>

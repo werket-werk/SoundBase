@@ -91,6 +91,42 @@ h2 { font-size: clamp(30px, 4vw, 44px); letter-spacing: -0.02em; line-height: 1.
 .screenshot-overview a { width: fit-content; max-width: 100%; margin-top: 12px; }
 .screenshot-overview img { max-width: min(100%, 480px); max-height: 260px; width: auto; }
 
+/* Screenshot viewer */
+html:has(#screenshot-viewer[open]) { overflow: hidden; }
+#screenshot-viewer {
+  width: min(100%, 1200px);
+  height: 100%;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  padding: 12px clamp(12px, 3vw, 32px);
+  border: 0;
+  background: transparent;
+  color: #fff;
+}
+#screenshot-viewer[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; }
+#screenshot-viewer::backdrop { background: rgba(12, 12, 15, .96); }
+.viewer-toolbar, .viewer-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.viewer-toolbar { font-weight: 600; }
+.viewer-stage { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; touch-action: pinch-zoom; user-select: none; }
+.viewer-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.viewer-caption { text-align: center; font-size: 15px; }
+.viewer-count { display: block; color: #c3c3ca; font-size: 13px; }
+#screenshot-viewer button {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #63636b;
+  border-radius: 50%;
+  background: #27272d;
+  color: inherit;
+  font: inherit;
+  font-size: 24px;
+  cursor: pointer;
+}
+#screenshot-viewer button:hover { background: #42424b; }
+#screenshot-viewer button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
 .privacy-banner { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
 .privacy-banner .big { font-size: 56px; }
 
