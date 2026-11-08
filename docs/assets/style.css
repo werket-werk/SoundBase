@@ -78,16 +78,18 @@ h2 { font-size: clamp(30px, 4vw, 44px); letter-spacing: -0.02em; line-height: 1.
 #screenshots + .soft { border-top: 1px solid var(--line); }
 .screenshot-group + .screenshot-group { margin-top: 42px; }
 .screenshot-group h3 { font-size: 26px; margin: 0 0 16px; }
-.screenshot-grid { display: grid; gap: 18px; }
-.screenshot-iphone, .screenshot-watch { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.screenshot-mac { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.screenshot-grid { display: grid; gap: 12px; }
+.screenshot-iphone, .screenshot-watch { grid-template-columns: repeat(auto-fill, 100px); }
+.screenshot-mac { grid-template-columns: repeat(auto-fill, clamp(128px, 35vw, 195px)); }
 .screenshot-grid figure { margin: 0; }
-.screenshot-grid a { display: block; border-radius: 12px; }
-.screenshot-grid a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
-.screenshot-grid img, .screenshot-overview img { display: block; width: 100%; height: auto; border-radius: 12px; }
+.screenshot-grid a, .screenshot-overview a { display: block; border-radius: 12px; }
+#screenshots a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+#screenshots img { display: block; height: auto; border-radius: 12px; }
+.screenshot-grid img { width: 100%; }
 .screenshot-grid figcaption { color: var(--muted); font-size: 14px; margin-top: 6px; }
 .screenshot-overview { margin-top: 8px; }
-.screenshot-overview img { margin-top: 12px; }
+.screenshot-overview a { width: fit-content; max-width: 100%; margin-top: 12px; }
+.screenshot-overview img { max-width: min(100%, 480px); max-height: 260px; width: auto; }
 
 .privacy-banner { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
 .privacy-banner .big { font-size: 56px; }
@@ -120,6 +122,4 @@ footer .fine { width: 100%; font-size: 12px; }
   .nav .links .hide-sm { display: none; }
   .hero { padding: 56px 0 40px; }
   section { padding: 48px 0; }
-  .screenshot-iphone, .screenshot-watch { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .screenshot-mac { grid-template-columns: minmax(0, 1fr); }
 }

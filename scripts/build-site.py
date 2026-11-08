@@ -41,7 +41,7 @@ def screenshot_group(platform, folder, screens):
     </div>
     <details class="screenshot-overview">
       <summary>View {platform} overview</summary>
-      {overview}
+      <a href="assets/screenshots/{folder}-overview.webp" aria-label="Enlarge {platform} overview">{overview}</a>
     </details>
   </div>"""
 
