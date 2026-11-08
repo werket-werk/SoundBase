@@ -260,6 +260,31 @@ final class Player {
 
     // MARK: - Sync across devices
 
+    var transferSnapshot: PlaybackTransfer? {
+        guard current != nil, !isCasting, !queue.contains(where: \.isRadio) else { return nil }
+        return PlaybackTransfer(queue: queue, index: index, position: max(0, elapsed),
+                                playing: avPlayer.timeControlStatus != .paused)
+    }
+
+    func canReceive(_ transfer: PlaybackTransfer) async -> Bool {
+        guard !isCasting, let song = transfer.song, let url = playbackURL(for: song) else { return false }
+        return (try? await AVURLAsset(url: url).load(.isPlayable)) == true
+    }
+
+    func receive(_ transfer: PlaybackTransfer) {
+        originalOrder = transfer.queue
+        queue = transfer.queue
+        index = transfer.index
+        autoplayStart = nil
+        shuffle = false
+        startCurrent(autoPlay: transfer.playing, at: transfer.position)
+    }
+
+    func releaseForTransfer() {
+        saveTask?.cancel()
+        stop()
+    }
+
     func restoreQueue() async {
         guard queue.isEmpty, let client, let saved = try? await client.playQueue(),
               let entries = saved.entry, !entries.isEmpty, queue.isEmpty else { return }
@@ -336,19 +361,16 @@ final class Player {
         Task { await fillAutoplayIfNeeded() }
     }
 
+    private func playbackURL(for song: Song) -> URL? {
+        if let radio = radioURLs[song.id] { return radio }
+        if let local = downloads?.localURL(for: song.id) { return local }
+        let defaults = UserDefaults.standard
+        return client?.streamURL(song.id, maxBitRate: defaults.integer(forKey: Pref.maxBitRate),
+                                 format: defaults.string(forKey: Pref.format) ?? "raw")
+    }
+
     private func makeItem(_ song: Song) -> AVPlayerItem {
-        let url: URL
-        if let radio = radioURLs[song.id] {
-            url = radio
-        } else if let local = downloads?.localURL(for: song.id) {
-            url = local
-        } else if let client {
-            let defaults = UserDefaults.standard
-            url = client.streamURL(song.id, maxBitRate: defaults.integer(forKey: Pref.maxBitRate),
-                                   format: defaults.string(forKey: Pref.format) ?? "raw")
-        } else {
-            url = URL(string: "about:blank")!
-        }
+        let url = playbackURL(for: song) ?? URL(string: "about:blank")!
         let item = AVPlayerItem(asset: AVURLAsset(url: url))
         item.preferredForwardBufferDuration = 30
         return item
@@ -586,4 +608,74 @@ final class Player {
             return .success
         }
     }
+}
+
+/// Incoming and outgoing handoffs are staged separately from the player’s live queue.
+@MainActor
+final class PlaybackEndpoint {
+    private let player: Player
+    private var staged: (id: String, transfer: PlaybackTransfer, expiry: Date)?
+    private var released: (id: String, transfer: PlaybackTransfer, expiry: Date)?
+    private var lastCommit: String?
+
+    init(player: Player) { self.player = player }
+
+    func handle(_ command: WatchCommand, _ message: [String: Any]) async -> [String: Any]? {
+        let id = message[WatchKey.transaction] as? String ?? ""
+        switch command {
+        case .snapshot:
+            guard let data = player.transferSnapshot?.encoded else { return failure }
+            return [WatchKey.success: true, WatchKey.transfer: data]
+        case .release:
+            if let released, released.expiry <= Date() { self.released = nil }
+            if let released, released.id == id, let data = released.transfer.encoded {
+                return [WatchKey.success: true, WatchKey.transfer: data]
+            }
+            guard released == nil, !id.isEmpty, let snapshot = player.transferSnapshot,
+                  snapshot.song?.id == message[WatchKey.songID] as? String,
+                  let data = snapshot.encoded else { return failure }
+            released = (id, snapshot, Date().addingTimeInterval(60))
+            player.pause()
+            return [WatchKey.success: true, WatchKey.transfer: data]
+        case .prepare:
+            guard !id.isEmpty, let transfer = PlaybackTransfer.decode(message[WatchKey.transfer]),
+                  await player.canReceive(transfer),
+                  staged == nil || staged?.id == id || (staged?.expiry ?? .distantPast) <= Date() else { return failure }
+            staged = (id, transfer, Date().addingTimeInterval(30))
+            return success
+        case .commit:
+            if lastCommit == id { return success }
+            guard let staged, staged.id == id, staged.expiry > Date(), !player.isCasting else { return failure }
+            self.staged = nil
+            lastCommit = id
+            let requestedPosition = message[WatchKey.elapsed] as? Double ?? staged.transfer.position
+            let position = requestedPosition.isFinite ? max(0, requestedPosition) : staged.transfer.position
+            player.receive(PlaybackTransfer(queue: staged.transfer.queue, index: staged.transfer.index,
+                                            position: position, playing: message[WatchKey.isPlaying] as? Bool ?? staged.transfer.playing))
+            return success
+        case .committed:
+            return lastCommit == id ? success : failure
+        case .cancel:
+            if staged?.id == id { staged = nil }
+            if let released, released.id == id {
+                self.released = nil
+                if released.transfer.playing, player.current?.id == released.transfer.song?.id { player.resume() }
+            }
+            return success
+        case .finish:
+            if let released, released.id == id {
+                self.released = nil
+                if let current = player.transferSnapshot, !current.playing,
+                   current.index == released.transfer.index, current.queue == released.transfer.queue {
+                    player.releaseForTransfer()
+                }
+            }
+            return success
+        default:
+            return nil
+        }
+    }
+
+    private var success: [String: Any] { [WatchKey.success: true] }
+    private var failure: [String: Any] { [WatchKey.success: false] }
 }

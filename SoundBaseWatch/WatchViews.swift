@@ -23,32 +23,19 @@ struct SoundBaseWatchApp: App {
 
 struct WatchRootView: View {
     @Environment(WatchStore.self) private var store
-    @Environment(WatchPlayer.self) private var player
     @Environment(WatchSession.self) private var session
 
     var body: some View {
         @Bindable var store = store
         NavigationStack(path: $store.path) {
             List {
-                if session.phoneIsPlayingSomething {
-                    NavigationLink { RemoteView() } label: {
-                        Label {
-                            VStack(alignment: .leading) {
-                                Text("On iPhone").font(.headline)
-                                Text(session.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                        } icon: { Image(systemName: "iphone") }
-                    }
-                }
-                if player.current != nil {
-                    NavigationLink { NowPlayingView() } label: {
-                        Label {
-                            VStack(alignment: .leading) {
-                                Text("On Watch").font(.headline)
-                                Text(player.current?.title ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                        } icon: { Image(systemName: "applewatch") }
-                    }
+                NavigationLink(value: WatchRoute.nowPlaying) {
+                    Label {
+                        VStack(alignment: .leading) {
+                            Text("Now Playing").font(.headline)
+                            Text(session.currentTitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    } icon: { Image(systemName: session.device.icon) }
                 }
                 Section("Library") {
                     NavigationLink { DownloadedWatchView() } label: { Label("Downloaded", systemImage: "arrow.down.circle.fill") }
@@ -72,8 +59,7 @@ struct WatchRootView: View {
             .navigationTitle("SoundBase")
             .navigationDestination(for: WatchRoute.self) { route in
                 switch route {
-                case .remote: RemoteView()
-                case .nowPlaying: NowPlayingView()
+                case .nowPlaying: WatchNowPlayingView()
                 case .downloaded: DownloadedWatchView()
                 case .playlists: PlaylistsWatchView()
                 case .albums: AlbumsWatchView()
@@ -86,68 +72,149 @@ struct WatchRootView: View {
 }
 
 enum WatchRoute: Hashable {
-    case remote, nowPlaying, downloaded, playlists, albums
+    case nowPlaying, downloaded, playlists, albums
     case album(id: String, name: String)
 }
 
-// MARK: - iPhone remote
+// MARK: - Now Playing
 
-struct RemoteView: View {
+struct WatchNowPlayingView: View {
     @Environment(WatchSession.self) private var session
+    @Environment(WatchPlayer.self) private var player
+    @Environment(WatchStore.self) private var store
+
+    private var local: Bool { session.device == .watch }
+    private var hasTrack: Bool { local ? player.current != nil : session.phoneIsPlayingSomething }
+    private var controlsEnabled: Bool { hasTrack && session.availableDevices.contains(session.device) && !session.switching }
+    private var upNext: [String] {
+        if !local { return session.upNext }
+        return player.queue.dropFirst(player.index + 1).prefix(12).map { $0.title }
+    }
 
     var body: some View {
         TabView {
-            TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                VStack(spacing: 6) {
-                    HStack(spacing: 8) {
-                        Group {
-                            if let art = session.artwork { Image(uiImage: art).resizable().scaledToFill() }
-                            else { Color.gray.opacity(0.3).overlay(Image(systemName: "music.note")) }
+            ScrollView {
+                VStack(spacing: 5) {
+                    WatchDeviceButton()
+                        .buttonStyle(.plain)
+                        .font(.caption2)
+
+                    artwork
+                        .frame(width: 74, height: 74)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .frame(maxWidth: .infinity)
+                        .overlay(alignment: .trailing) {
+                            let loved = local ? session.localLoved : session.loved
+                            transport(loved ? "Remove Favourite" : "Add Favourite",
+                                      icon: loved ? "star.fill" : "star", command: .love)
+                                .frame(width: 44)
+                                .foregroundStyle(loved ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                                .disabled(!controlsEnabled || (local && store.client == nil))
                         }
-                        .frame(width: 40, height: 40)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(session.title).font(.headline).lineLimit(1)
-                            Text(session.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .padding(.top, 3)
+
+                    VStack(spacing: 0) {
+                        Text(session.currentTitle).font(.headline).lineLimit(1)
+                        if let artist = local ? player.current?.artist : session.artist, !artist.isEmpty {
+                            Text(artist).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                         }
-                        Spacer(minLength: 0)
                     }
-                    ProgressView(value: session.elapsed(at: ctx.date), total: max(session.duration, 1))
-                    HStack {
-                        Button { session.send(.previous) } label: { Image(systemName: "backward.fill") }
-                        Button { session.send(.togglePlay) } label: {
-                            Image(systemName: session.isPlaying ? "pause.fill" : "play.fill").font(.title2)
-                        }
-                        Button { session.send(.next) } label: { Image(systemName: "forward.fill") }
-                    }
-                    .buttonStyle(.plain)
-                    .font(.title3)
-                    .padding(.vertical, 4)
                     .frame(maxWidth: .infinity)
-                    Button { session.send(.love) } label: {
-                        Label(session.loved ? "Favourited" : "Favourite", systemImage: session.loved ? "star.fill" : "star")
-                            .font(.caption)
+                    .padding(.horizontal, 5)
+
+                    HStack(spacing: 0) {
+                        transport("Previous track", icon: "backward.fill", command: .previous)
+                        transport(session.playing ? "Pause" : "Play",
+                                  icon: session.playing ? "pause.fill" : "play.fill", command: .togglePlay)
+                        transport("Next track", icon: "forward.fill", command: .next)
                     }
-                    .buttonStyle(.bordered)
-                    if !session.reachable {
-                        Text("iPhone not reachable").font(.caption2).foregroundStyle(.secondary)
+                    .disabled(!controlsEnabled)
+
+                    if hasTrack {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            let duration = local ? Double(player.current?.duration ?? 0) : session.duration
+                            let elapsed = local ? player.elapsed : session.elapsed(at: context.date)
+                            if duration > 0 { ProgressView(value: min(duration, elapsed), total: duration) }
+                        }
+                    }
+                    if session.switching { ProgressView().controlSize(.mini) }
+                    if let error = session.commandError ?? (local ? player.error : nil) {
+                        Text(error).font(.caption2).foregroundStyle(.secondary)
+                    } else if !local && !session.availableDevices.contains(session.device) {
+                        Text("\(session.device.name) unavailable").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
                 .padding(.horizontal, 4)
             }
-            .containerBackground(session.accent.color.gradient.opacity(0.5), for: .tabView)
+            .containerBackground(session.accent.color.gradient.opacity(0.38), for: .tabView)
 
             List {
                 Section("Up Next") {
-                    if session.upNext.isEmpty { Text("Nothing queued").foregroundStyle(.secondary) }
-                    ForEach(Array(session.upNext.enumerated()), id: \.offset) { i, line in
-                        Button { session.send(.jump, index: i) } label: { Text(line).font(.footnote).lineLimit(2) }
+                    if upNext.isEmpty { Text("Nothing queued").foregroundStyle(.secondary) }
+                    ForEach(Array(upNext.enumerated()), id: \.offset) { index, title in
+                        Button { session.control(.jump, index: index) } label: {
+                            Text(title).font(.footnote).lineLimit(2)
+                        }
+                        .disabled(!controlsEnabled)
                     }
                 }
             }
         }
         .tabViewStyle(.verticalPage)
-        .navigationTitle("iPhone")
+        .task(id: player.current?.id) { await session.refreshLocalFavourite() }
+    }
+
+    private var artwork: some View {
+        Group {
+            if let image = local ? player.currentArtwork : session.artwork {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                Rectangle().fill(.white.opacity(0.14)).overlay {
+                    Image(systemName: "music.note").font(.title2)
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func transport(_ title: String, icon: String, command: WatchCommand) -> some View {
+        Button { session.control(command) } label: {
+            Image(systemName: icon)
+                .font(command == .togglePlay ? .title2 : .body)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+}
+
+private struct WatchDeviceButton: View {
+    @Environment(WatchSession.self) private var session
+    @State private var showing = false
+
+    var body: some View {
+        Button { showing = true } label: {
+            HStack(spacing: 5) {
+                Label(session.device.name, systemImage: session.device.icon)
+                Image(systemName: "chevron.down").font(.caption2)
+            }
+        }
+        .accessibilityLabel("Playing on \(session.device.name). Change device")
+        .disabled(session.switching)
+        .sheet(isPresented: $showing) {
+            NavigationStack {
+                List(session.availableDevices) { device in
+                    Button {
+                        showing = false
+                        Task { await session.select(device) }
+                    } label: {
+                        Label(device.name, systemImage: device == session.device ? "checkmark" : device.icon)
+                    }
+                }
+                .navigationTitle("Play on")
+            }
+        }
     }
 }
 
@@ -158,21 +225,85 @@ struct DownloadedWatchView: View {
 
     var body: some View {
         let songs = store.downloadedSongs
+        let albums = Dictionary(grouping: songs, by: store.downloadAlbumKey)
         List {
             if songs.isEmpty {
                 Text("Download playlists or albums to listen without your iPhone.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             } else {
-                PlayButtons(songs: songs)
-                ForEach(Array(songs.enumerated()), id: \.element.id) { i, song in
-                    WatchSongRow(song: song) { store.player.play(songs, startAt: i) }
+                ForEach(albums.keys.sorted { (albums[$0]?.first?.album ?? "", $0) < (albums[$1]?.first?.album ?? "", $1) }, id: \.self) { key in
+                    if let song = albums[key]?.first {
+                        NavigationLink {
+                            DownloadedSongsView(albumKey: key, title: song.album ?? "Unknown Album")
+                        } label: {
+                            HStack {
+                                DownloadedArtwork(song: song)
+                                VStack(alignment: .leading) {
+                                    Text(song.album ?? "Unknown Album").lineLimit(1)
+                                    if let artist = song.artist {
+                                        Text(artist).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                .onDelete { offsets in offsets.map { songs[$0].id }.forEach(store.remove) }
+                NavigationLink("All Songs") { DownloadedSongsView(title: "All Songs") }
                 Text(ByteCountFormatter.string(fromByteCount: store.totalBytes, countStyle: .file) + " used")
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Downloaded")
+    }
+}
+
+private struct DownloadedArtwork: View {
+    let song: Song
+    @Environment(WatchStore.self) private var store
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image { Image(uiImage: image).resizable().scaledToFill() }
+            else { Rectangle().fill(.secondary.opacity(0.2)).overlay { Image(systemName: "music.note") } }
+        }
+        .frame(width: 36, height: 36)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .task(id: song.coverArt) { image = store.savedArtwork(for: song) }
+    }
+}
+
+private struct DownloadedSongsView: View {
+    var albumKey: String?
+    let title: String
+    @Environment(WatchStore.self) private var store
+    @Environment(WatchSession.self) private var session
+
+    var body: some View {
+        let songs = store.downloadedSongs.filter { song in
+            albumKey.map { store.downloadAlbumKey(for: song) == $0 } ?? true
+        }
+        List {
+            if songs.isEmpty { Text("No downloaded songs").foregroundStyle(.secondary) }
+            else {
+                PlayButtons(songs: songs)
+                WatchDeviceButton()
+                ForEach(Array(songs.enumerated()), id: \.offset) { index, song in
+                    WatchSongRow(song: song) { Task { await session.play(songs, startAt: index) } }
+                }
+                .onDelete { offsets in offsets.map { songs[$0].id }.forEach(store.remove) }
+            }
+        }
+        .navigationTitle(title)
+        .alert("Playback", isPresented: Binding(
+            get: { session.commandError != nil },
+            set: { if !$0 { session.dismissError() } }
+        )) {
+            Button("OK") { session.dismissError() }
+        } message: {
+            Text(session.commandError ?? "")
+        }
     }
 }
 
@@ -233,6 +364,7 @@ struct RemoteSongList: View {
     let title: String
     let load: (SubsonicClient) async -> [Song]
     @Environment(WatchStore.self) private var store
+    @Environment(WatchSession.self) private var session
     @State private var songs: [Song]?
 
     var body: some View {
@@ -241,9 +373,10 @@ struct RemoteSongList: View {
                 if songs.isEmpty { Text("No songs").foregroundStyle(.secondary) }
                 else {
                     PlayButtons(songs: songs)
+                    WatchDeviceButton()
                     downloadButton(songs)
-                    ForEach(Array(songs.enumerated()), id: \.element.id) { i, song in
-                        WatchSongRow(song: song) { store.player.play(songs, startAt: i) }
+                    ForEach(Array(songs.enumerated()), id: \.offset) { i, song in
+                        WatchSongRow(song: song) { Task { await session.play(songs, startAt: i) } }
                     }
                 }
             } else {
@@ -251,6 +384,14 @@ struct RemoteSongList: View {
             }
         }
         .navigationTitle(title)
+        .alert("Playback", isPresented: Binding(
+            get: { session.commandError != nil },
+            set: { if !$0 { session.dismissError() } }
+        )) {
+            Button("OK") { session.dismissError() }
+        } message: {
+            Text(session.commandError ?? "")
+        }
         .task {
             guard songs == nil, let client = store.client else { return }
             songs = await load(client)
@@ -266,6 +407,8 @@ struct RemoteSongList: View {
                 Label("Downloaded", systemImage: "checkmark.circle.fill")
             } else if busy {
                 Label("Downloading \(done)/\(songs.count)", systemImage: "arrow.down.circle.dotted")
+            } else if songs.contains(where: { store.failedDownloads.contains($0.id) }) {
+                Label("Retry Download", systemImage: "arrow.clockwise")
             } else {
                 Label("Download", systemImage: "arrow.down.circle")
             }
@@ -276,21 +419,28 @@ struct RemoteSongList: View {
 
 struct PlayButtons: View {
     let songs: [Song]
-    @Environment(WatchStore.self) private var store
+    @Environment(WatchSession.self) private var session
 
     var body: some View {
+        let active = songs.contains { $0.id == session.currentSongID }
+        let pause = active && session.playing
         HStack(spacing: 8) {
-            Button { store.player.play(songs) } label: {
-                Label("Play", systemImage: "play.fill").labelStyle(.iconOnly).frame(maxWidth: .infinity)
+            Button {
+                if active { session.control(.togglePlay) }
+                else { Task { await session.play(songs) } }
+            } label: {
+                Label(pause ? "Pause" : "Play", systemImage: pause ? "pause.fill" : "play.fill")
+                    .labelStyle(.iconOnly).frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Play")
-            Button { store.player.play(songs, shuffled: true) } label: {
+            .accessibilityLabel(pause ? "Pause" : "Play")
+            Button { Task { await session.play(songs, shuffled: true) } } label: {
                 Label("Shuffle", systemImage: "shuffle").labelStyle(.iconOnly).frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .accessibilityLabel("Shuffle")
         }
+        .disabled(session.switching)
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
     }
@@ -300,14 +450,14 @@ struct WatchSongRow: View {
     let song: Song
     let action: () -> Void
     @Environment(WatchStore.self) private var store
-    @Environment(WatchPlayer.self) private var player
+    @Environment(WatchSession.self) private var session
 
     var body: some View {
         Button(action: action) {
             HStack {
                 VStack(alignment: .leading) {
                     Text(song.title).lineLimit(1)
-                        .foregroundStyle(player.current?.id == song.id ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                        .foregroundStyle(session.currentSongID == song.id ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
                     Text(song.artist ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)

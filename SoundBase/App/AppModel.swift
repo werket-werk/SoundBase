@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import CryptoKit
 
 enum AppTab: Hashable { case home, browse, radio, library, search }
 
@@ -91,13 +92,14 @@ final class AppModel {
     }
 
     func signOut() {
-        player.stop()
         CredentialStore.clear()
         credentials = nil
         client = nil
         player.client = nil
+        downloads.client = nil
         loved = []
         playlists = []
+        player.stop()
     }
 
     // MARK: Favourites
@@ -184,4 +186,44 @@ extension Array where Element == Song {
         return filter { seen.insert($0.id).inserted }
     }
     var totalDuration: Int { reduce(0) { $0 + ($1.duration ?? 0) } }
+}
+
+extension AppModel {
+    var playbackAccount: String? {
+        guard let credentials else { return nil }
+        let identity = Data((credentials.url.absoluteString + "\n" + credentials.username).utf8)
+        return Data(SHA256.hash(data: identity)).base64EncodedString()
+    }
+
+    func playbackState() -> [String: Any] {
+        var state: [String: Any] = [
+            WatchKey.title: player.current?.title ?? "Not Playing",
+            WatchKey.isPlaying: player.isPlaying,
+            WatchKey.duration: player.duration,
+            WatchKey.elapsed: player.elapsed,
+            WatchKey.timestamp: Date().timeIntervalSince1970
+        ]
+        guard let song = player.current else { return state }
+        state[WatchKey.songID] = song.id
+        state[WatchKey.artist] = song.artist
+        state[WatchKey.album] = song.album
+        state[WatchKey.loved] = isLoved(song.id)
+        state[WatchKey.upNext] = player.queue.dropFirst(player.index + 1).prefix(12)
+            .map { "\($0.title) — \($0.artist ?? "")" }
+        return state
+    }
+
+    func handlePlaybackControl(_ command: WatchCommand, index: Int?) {
+        switch command {
+        case .togglePlay: player.togglePlayPause()
+        case .pause: player.pause()
+        case .next: player.next()
+        case .previous: player.previous()
+        case .love: toggleLoveCurrent()
+        case .shuffleFavourites: Task { await playFavouritesMix() }
+        case .shuffleAll: Task { await playDiscoveryMix() }
+        case .jump: if let index { player.jump(to: player.index + 1 + index) }
+        default: break
+        }
+    }
 }

@@ -91,6 +91,8 @@ struct SettingsView: View {
     @AppStorage(NowPlayingStyle.storageKey) private var nowPlayingStyle = NowPlayingStyle.blurredArtwork.rawValue
     @AppStorage(AppIconSwitcher.matchKey) private var iconMatchesAccent = true
     @State private var confirmSignOut = false
+    @State private var macCode = ""
+    private let nearby = NearbyPlayback.shared
 
     var body: some View {
         @Bindable var player = model.player
@@ -114,6 +116,24 @@ struct SettingsView: View {
                     LabeledContent("Address", value: model.credentials?.url.host ?? "")
                     LabeledContent("User", value: model.credentials?.username ?? "")
                     Button("Sign Out", role: .destructive) { confirmSignOut = true }
+                }
+                Section("Playback Devices") {
+                    if nearby.connected {
+                        Label("Mac connected", systemImage: "desktopcomputer")
+                    } else {
+                        TextField("Mac pairing code", text: $macCode)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                        Button("Pair Mac") {
+                            nearby.pair(code: macCode)
+                            macCode = ""
+                        }
+                        .disabled(macCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if let status = nearby.status { Text(status).foregroundStyle(.secondary) }
+                    }
+                    if !nearby.pairingCode.isEmpty {
+                        Button("Forget Mac", role: .destructive) { nearby.forgetMac() }
+                    }
                 }
                 Section {
                     Picker("Streaming Quality", selection: $maxBitRate) {

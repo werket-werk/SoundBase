@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		01C1B93B274D14A73E90F50D /* NearbyPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA57A1EED9388A107CE09249 /* NearbyPlayback.swift */; };
 		06663BA99612A5B8766827BA /* SoundBaseApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44EAB61B8FFF90B6CC971C2 /* SoundBaseApp.swift */; };
 		0AEACEED8D44C256D12BCFF4 /* GoogleSansMedium.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 84AA95C2F69173E0B3B6E8A9 /* GoogleSansMedium.bundle */; };
 		0E10B7F1D609E979A61ED50E /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F4BE5881B16F359A73C250 /* Theme.swift */; };
@@ -45,7 +46,9 @@
 		97A3AFCBE698A4022526AA2A /* Support.swift in Sources */ = {isa = PBXBuildFile; fileRef = A930F5650ED5F9B9720F4E9C /* Support.swift */; };
 		99C052CECBDEB37229DBCEEB /* GoogleCastOptionalUIResources.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 19A063179F9A86AD9C4DA619 /* GoogleCastOptionalUIResources.bundle */; };
 		A36862D0FF3D509878832864 /* WatchProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8E321E18CEC681B48880C5 /* WatchProtocol.swift */; };
+		A40D21FEFE38E092985BA05F /* NearbyPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA57A1EED9388A107CE09249 /* NearbyPlayback.swift */; };
 		A8360CB437C006B34607498A /* SubsonicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB56A19DD31AB29706E4867 /* SubsonicClient.swift */; };
+		A927B018387525AB0C50F36C /* NearbyPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA57A1EED9388A107CE09249 /* NearbyPlayback.swift */; };
 		ACDA9A57F9C1319F0ED57D72 /* MacStubs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72222EF7B5214B0052D9004D /* MacStubs.swift */; };
 		AEB146FAFE4B25C79C0553DA /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FF48BA8870AEC0FC5B7705 /* Player.swift */; };
 		B29D27EA9DC07EB7443BECA1 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F4BE5881B16F359A73C250 /* Theme.swift */; };
@@ -137,6 +140,7 @@
 		E2761B5C1930E021115865DD /* ScreenshotDirector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotDirector.swift; sourceTree = "<group>"; };
 		E5628C6057AE9A218288F02E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		E9E16CAA967A4259AAD9E049 /* Platform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Platform.swift; sourceTree = "<group>"; };
+		EA57A1EED9388A107CE09249 /* NearbyPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyPlayback.swift; sourceTree = "<group>"; };
 		EE193FE1D283B8A5C6C8FC5D /* SoundBaseMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundBaseMacApp.swift; sourceTree = "<group>"; };
 		F9E2820352F1876F66976BDD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FBB56A19DD31AB29706E4867 /* SubsonicClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubsonicClient.swift; sourceTree = "<group>"; };
@@ -250,6 +254,7 @@
 		A7AFBB208BEACE3AE1695193 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				EA57A1EED9388A107CE09249 /* NearbyPlayback.swift */,
 				E9E16CAA967A4259AAD9E049 /* Platform.swift */,
 				49F4BE5881B16F359A73C250 /* Theme.swift */,
 				0E8E321E18CEC681B48880C5 /* WatchProtocol.swift */,
@@ -469,6 +474,7 @@
 				7EF73324E8DBB1B0282C4E24 /* HomeViews.swift in Sources */,
 				35A1DFA8E2D0F823B20A6E82 /* LibraryViews.swift in Sources */,
 				51664212B4B43505F8D7ED4A /* Models.swift in Sources */,
+				01C1B93B274D14A73E90F50D /* NearbyPlayback.swift in Sources */,
 				312175BAA76A83C15026450E /* NowPlayingView.swift in Sources */,
 				238578843299DD00E97FC3DE /* PhoneSession.swift in Sources */,
 				5533418435AC9EA52EF25798 /* Platform.swift in Sources */,
@@ -489,6 +495,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				270D40CEC91243469FFF74B8 /* Models.swift in Sources */,
+				A40D21FEFE38E092985BA05F /* NearbyPlayback.swift in Sources */,
 				52B6550A067C644A1E52ED70 /* Platform.swift in Sources */,
 				56671AABD194F1CA24CC014C /* SubsonicClient.swift in Sources */,
 				D16117FF95D7E3390724DD3C /* Theme.swift in Sources */,
@@ -511,6 +518,7 @@
 				2EAF22EEAF553EE3AA2F845C /* MacScreenshotDirector.swift in Sources */,
 				ACDA9A57F9C1319F0ED57D72 /* MacStubs.swift in Sources */,
 				E1837B83BA642A9A6270C1A8 /* Models.swift in Sources */,
+				A927B018387525AB0C50F36C /* NearbyPlayback.swift in Sources */,
 				20DD4282AC24E139D68AE9BB /* Platform.swift in Sources */,
 				AEB146FAFE4B25C79C0553DA /* Player.swift in Sources */,
 				5FC8AFAA05C08D39543A943B /* SoundBaseMacApp.swift in Sources */,

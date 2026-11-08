@@ -152,6 +152,7 @@ struct MacSettingsView: View {
     @AppStorage(Pref.downloadQuality) private var downloadQuality = Pref.defaultDownloadQuality
     @AppStorage(AccentTheme.storageKey) private var accent = AccentTheme.fallback.rawValue
     @AppStorage(AppearanceMode.storageKey) private var appearance = AppearanceMode.system.rawValue
+    private let nearby = NearbyPlayback.shared
 
     var body: some View {
         @Bindable var player = model.player
@@ -200,6 +201,25 @@ struct MacSettingsView: View {
             }
             .formStyle(.grouped)
             .tabItem { Label("Playback", systemImage: "play.circle") }
+
+            Form {
+                Toggle("Share playback with iPhone", isOn: Binding(
+                    get: { nearby.sharingEnabled },
+                    set: { nearby.setSharing($0) }
+                ))
+                if nearby.sharingEnabled {
+                    LabeledContent("Pairing Code") {
+                        Text(nearby.displayCode).monospaced().textSelection(.enabled)
+                    }
+                    Text("Enter this code in SoundBase on your iPhone under Settings → Playback Devices.")
+                        .foregroundStyle(.secondary)
+                    if nearby.connected { Label("iPhone connected", systemImage: "iphone") }
+                    if let status = nearby.status { Text(status).foregroundStyle(.secondary) }
+                    Button("Generate New Code") { nearby.regenerateCode() }
+                }
+            }
+            .formStyle(.grouped)
+            .tabItem { Label("Devices", systemImage: "desktopcomputer") }
 
             Form {
                 Picker("Download Quality", selection: $downloadQuality) {
