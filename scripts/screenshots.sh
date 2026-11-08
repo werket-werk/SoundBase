@@ -13,7 +13,7 @@ shot() { # name scene [extra env...]
   env SIMCTL_CHILD_SB_DEMO_SERVER="$SERVER" SIMCTL_CHILD_SB_DEMO_USER="$USER_" SIMCTL_CHILD_SB_DEMO_PASS="$PASS" \
       SIMCTL_CHILD_SB_SCENE="$scene" "$@" xcrun simctl launch "$DEVICE" "$BID" >/dev/null
   sleep "${WAIT:-7}"
-  xcrun simctl io "$DEVICE" screenshot --type=png "$OUT/$name.png" >/dev/null 2>&1
+  xcrun simctl io "$DEVICE" screenshot --type=png "$OUT/iphone-$name.png" >/dev/null 2>&1
   echo "saved $name"
 }
 shot 01-home home SIMCTL_CHILD_SB_PLAY=1

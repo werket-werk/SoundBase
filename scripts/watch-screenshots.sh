@@ -12,7 +12,7 @@ shot() { # name scene
   SIMCTL_CHILD_SB_DEMO_SERVER="$SERVER" SIMCTL_CHILD_SB_DEMO_USER="$USER_" SIMCTL_CHILD_SB_DEMO_PASS="$PASS" \
     SIMCTL_CHILD_SB_SCENE="$2" xcrun simctl launch "$DEVICE" "$BID" >/dev/null
   sleep "${3:-8}"
-  xcrun simctl io "$DEVICE" screenshot --type=png "$OUT/$1.png" >/dev/null 2>&1
+  xcrun simctl io "$DEVICE" screenshot --type=png "$OUT/watch-$1.png" >/dev/null 2>&1
   echo "saved $1"
 }
 shot 01-library home 7

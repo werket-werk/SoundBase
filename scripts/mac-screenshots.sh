@@ -8,11 +8,11 @@ mkdir -p "$OUT"
 shot() { # name scene [VAR=value ...]
   local name="$1" scene="$2"; shift 2
   env SB_DEMO_SERVER="$SERVER" SB_DEMO_USER="$USER_" SB_DEMO_PASS="$PASS" SB_SCENE="$scene" \
-      SB_SNAPSHOT="$OUT/$name.png" "$@" "$APP" >/dev/null 2>&1 &
+      SB_SNAPSHOT="$OUT/mac-$name.png" "$@" "$APP" >/dev/null 2>&1 &
   local pid=$!
   for _ in $(seq 1 40); do kill -0 $pid 2>/dev/null || break; sleep 1; done
   kill $pid 2>/dev/null
-  [ -f "$OUT/$name.png" ] && echo "saved $name" || echo "FAILED $name"
+  [ -f "$OUT/mac-$name.png" ] && echo "saved $name" || echo "FAILED $name"
 }
 shot 01-home home SB_PAUSE=1
 shot 02-album-lyrics "album:Midnight Signals" SB_SEEK=22 SB_INSPECTOR=lyrics
