@@ -41,7 +41,7 @@ Passwords are never stored. The app keeps only the Subsonic salted token (in the
 
 ## Website
 
-The website (landing page, privacy policy, support, terms) lives in `docs/` and is served by GitHub Pages. Edit `scripts/build-site.py` and run `python3 scripts/build-site.py` to regenerate it.
+The website (landing page, privacy policy, support, terms) lives in `docs/` and is served by GitHub Pages. Install `cwebp` (included in Homebrew's `webp` package), edit `scripts/build-site.py`, and run `python3 scripts/build-site.py` to regenerate the site and its WebP gallery from the original PNGs in `screenshots/`.
 
 ## App Store
 

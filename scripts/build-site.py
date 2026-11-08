@@ -1,17 +1,85 @@
 #!/usr/bin/env python3
-"""Generates the static website in docs/ (served by GitHub Pages). Edit the page bodies below and re-run."""
+"""Generates the GitHub Pages site in docs/. Screenshot encoding requires cwebp."""
 from pathlib import Path
+from struct import unpack
+from subprocess import run
 
 REPO = "https://github.com/werket-werk/SoundBase"
 EMAIL = "hello@werket.com.au"
 UPDATED = "8 November 2026"
-OUT = Path(__file__).resolve().parent.parent / "docs"
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "docs"
+
+
+def screenshot(filename, alt):
+    source = ROOT / "screenshots" / f"{filename}.png"
+    asset = Path("assets/screenshots") / f"{filename}.webp"
+    destination = OUT / asset
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    run(["cwebp", "-quiet", "-q", "85", "-sharp_yuv", str(source), "-o", str(destination)], check=True)
+    with source.open("rb") as png:
+        png.seek(16)  # Width and height in the PNG IHDR chunk.
+        width, height = unpack(">II", png.read(8))
+    return f'<img src="{asset}" width="{width}" height="{height}" alt="{alt}" loading="lazy" decoding="async">'
+
+
+def screenshot_group(platform, folder, screens):
+    figures = []
+    for filename, label in screens:
+        preview = screenshot(f"{folder}/{filename}", f"{label} on {platform}")
+        asset = f"assets/screenshots/{folder}/{filename}.webp"
+        figures.append(f"""      <figure>
+        <a href="{asset}" aria-label="Enlarge {label} on {platform}">{preview}</a>
+        <figcaption>{label}</figcaption>
+      </figure>""")
+    overview = screenshot(f"{folder}-overview", f"Combined preview of SoundBase on {platform}")
+    previews = "\n".join(figures)
+    return f"""  <div class="screenshot-group">
+    <h3>{platform}</h3>
+    <div class="screenshot-grid screenshot-{folder}">
+{previews}
+    </div>
+    <details class="screenshot-overview">
+      <summary>View {platform} overview</summary>
+      {overview}
+    </details>
+  </div>"""
+
+
+SCREENSHOTS = "\n".join((
+    screenshot_group("iPhone", "iphone", [
+        ("01-home", "Home"),
+        ("02-now-playing", "Now Playing"),
+        ("03-lyrics", "Lyrics"),
+        ("04-album", "Album"),
+        ("05-queue", "Queue"),
+        ("06-library", "Library"),
+        ("07-playlist", "Playlist"),
+        ("08-artist", "Artist"),
+        ("09-search", "Search"),
+    ]),
+    screenshot_group("Apple Watch", "watch", [
+        ("01-library", "Library"),
+        ("02-remote", "Remote controls"),
+        ("03-album", "Album"),
+        ("04-downloaded", "Downloads"),
+        ("05-now-playing", "Now Playing"),
+    ]),
+    screenshot_group("Mac", "mac", [
+        ("01-home", "Home"),
+        ("02-album-lyrics", "Album and lyrics"),
+        ("03-artist", "Artist"),
+        ("04-playlist-queue", "Playlist and queue"),
+        ("05-albums", "Albums"),
+    ]),
+))
 
 def page(slug, title, description, body):
     nav = f"""<header class="nav"><div class="wrap">
   <a class="brand" href="index.html"><img src="assets/icon.png" alt="">SoundBase</a>
   <nav class="links">
     <a href="index.html#features" class="hide-sm">Features</a>
+    <a href="index.html#screenshots" class="hide-sm">Screenshots</a>
     <a href="support.html">Support</a>
     <a href="privacy.html">Privacy</a>
     <a href="{REPO}">GitHub</a>
@@ -59,6 +127,7 @@ page("index", "SoundBase — Your Navidrome music, beautifully",
     <a class="btn secondary" href="{REPO}">View Source on GitHub</a>
   </div>
   <p class="platforms">iPhone (iOS 18+) · Apple Watch (watchOS 11+) · Mac (macOS 15+)</p>
+  <a href="#screenshots">See screenshots ↓</a>
 </div></section>
 
 <section id="features" class="soft"><div class="wrap">
@@ -82,6 +151,12 @@ page("index", "SoundBase — Your Navidrome music, beautifully",
     <div class="device watch"><h3>Apple Watch</h3><ul><li>Download music to your wrist</li><li>Play with Bluetooth headphones, no iPhone needed</li><li>Control what's playing on your iPhone</li></ul></div>
     <div class="device mac"><h3>Mac</h3><ul><li>Sidebar library and native song tables</li><li>Lyrics and queue side panel</li><li>Menu bar mini player and keyboard shortcuts</li></ul></div>
   </div>
+</div></section>
+
+<section id="screenshots" class="soft"><div class="wrap">
+  <h2>SoundBase screenshots</h2>
+  <p class="section-lede">Explore the app on iPhone, Apple Watch and Mac. Select any screenshot to enlarge it.</p>
+{SCREENSHOTS}
 </div></section>
 
 <section class="soft"><div class="wrap privacy-banner">
