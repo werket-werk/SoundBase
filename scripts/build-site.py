@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generates the GitHub Pages site in docs/. Screenshot encoding requires cwebp."""
+from hashlib import sha256
 from pathlib import Path
 from struct import unpack
 from subprocess import run
@@ -9,6 +10,7 @@ EMAIL = "hello@werket.com.au"
 UPDATED = "8 November 2026"
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs"
+STYLE_VERSION = sha256((OUT / "assets/style.css").read_bytes()).hexdigest()[:12]
 
 
 def screenshot(filename, alt):
@@ -102,7 +104,7 @@ def page(slug, title, description, body):
 <meta property="og:image" content="assets/icon.png">
 <link rel="icon" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/icon.png">
-<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/style.css?v={STYLE_VERSION}">
 </head>
 <body>
 {nav}
