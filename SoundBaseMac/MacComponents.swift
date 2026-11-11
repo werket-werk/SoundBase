@@ -69,41 +69,64 @@ struct MacShelfHeader: View {
 struct MacAlbumTile: View {
     let album: Album
     var width: CGFloat = 170
+    var listRow = false
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
     @State private var hover = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            MacArtwork(id: album.coverArt, size: 400)
-                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
-                .overlay(alignment: .bottomLeading) {
-                    if hover {
-                        Button { Task { await model.playAlbum(album.id) } } label: {
-                            Image(systemName: "play.fill")
-                                .frame(width: 32, height: 32)
-                                .background(.tint, in: Circle())
-                                .foregroundStyle(.white)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(8)
+        Group {
+            if listRow {
+                NavigationLink(value: Route.album(album.id)) {
+                    HStack(spacing: 12) {
+                        MacArtwork(id: album.coverArt, size: 120).frame(width: 44, height: 44)
+                        LibraryItemTitle(title: album.name, subtitle: album.artist)
+                        Spacer(minLength: 0)
                     }
+                    .contentShape(Rectangle())
                 }
-            Text(album.name).font(.callout).lineLimit(1)
-            Text(album.artist ?? "").font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                .buttonStyle(.plain)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    MacArtwork(id: album.coverArt, size: 400)
+                        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                        .overlay(alignment: .bottomLeading) {
+                            if hover {
+                                Button { Task { await model.playAlbum(album.id) } } label: {
+                                    Image(systemName: "play.fill")
+                                        .frame(width: 32, height: 32)
+                                        .background(.tint, in: Circle())
+                                        .foregroundStyle(.white)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(8)
+                            }
+                        }
+                    Text(album.name).font(.callout).lineLimit(1)
+                    Text(album.artist ?? "").font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .frame(width: width)
+                .contentShape(Rectangle())
+                .onHover { hover = $0 }
+                .onTapGesture { router.go(.album(album.id)) }
+            }
         }
-        .frame(width: width)
-        .contentShape(Rectangle())
-        .onHover { hover = $0 }
-        .onTapGesture { router.go(.album(album.id)) }
         .contextMenu {
             Button("Play") { Task { await model.playAlbum(album.id) } }
             Button("Shuffle") { Task { await model.playAlbum(album.id, shuffled: true) } }
             Button("Play Next") { Task { if let s = try? await model.client?.album(album.id)?.song { model.player.playNext(s) } } }
-            Button("Play Last") { Task { if let s = try? await model.client?.album(album.id)?.song { model.player.playLast(s) } } }
+            Button("Add to Queue") { Task { if let s = try? await model.client?.album(album.id)?.song { model.player.addToQueue(s) } } }
             Divider()
             Button(model.isLoved(album.id) ? "Unfavourite" : "Favourite") { model.toggleLove(album.id, kind: .album) }
-            Button("Download") { Task { if let s = try? await model.client?.album(album.id)?.song { model.downloads.download(s) } } }
+            if model.downloads.savedAlbum("id:\(album.id)") == nil {
+                Button("Download Album") {
+                    Task {
+                        guard let client = model.client, let tracks = try? await client.album(album.id)?.song,
+                              model.client?.creds.libraryKey == client.creds.libraryKey else { return }
+                        model.downloads.downloadAlbum(id: album.id, name: album.name, tracks: tracks)
+                    }
+                }
+            }
             if let artistId = album.artistId {
                 Divider()
                 Button("Go to Artist") { router.go(.artist(artistId)) }
@@ -153,11 +176,12 @@ struct MacArtistShelf: View {
     let title: String
     var subtitle: String? = nil
     let artists: [Artist]
+    var route: Route? = nil
 
     var body: some View {
         if !artists.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                MacShelfHeader(title: title, subtitle: subtitle)
+                MacShelfHeader(title: title, subtitle: subtitle, route: route)
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 20) {
                         ForEach(artists) { MacArtistTile(artist: $0) }
@@ -248,6 +272,8 @@ struct MacSongTable: View {
     let songs: [Song]
     var showNumber = false
     var showAlbum = true
+    var playSingle = false
+    var query = ""
     var onDelete: ((IndexSet) -> Void)? = nil
     @Environment(AppModel.self) private var model
     @Environment(Player.self) private var player
@@ -260,7 +286,9 @@ struct MacSongTable: View {
     }
 
     var body: some View {
-        let rows = songs.enumerated().map { Row(id: $0.offset, song: $0.element) }
+        let rows = songs.enumerated().compactMap { index, song in
+            song.matchesDownloadSearch(query) ? Row(id: index, song: song) : nil
+        }
         Table(rows, selection: $selection) {
             TableColumn("") { row in
                 Group {
@@ -290,43 +318,62 @@ struct MacSongTable: View {
                 Text(formatTime(Double(row.song.duration ?? 0))).monospacedDigit().foregroundStyle(.secondary)
             }
             .width(56)
+            TableColumn("") { row in
+                QueueTrackButton(song: row.song).id(row.song.id)
+            }
+            .width(32)
         }
         .contextMenu(forSelectionType: Int.self) { ids in
-            let picked = ids.sorted().map { songs[$0] }
+            let picked = ids.sorted().filter { songs.indices.contains($0) }.map { songs[$0] }
             if !picked.isEmpty { MacSongMenu(songs: picked, onDelete: onDelete.map { del in { del(IndexSet(ids)) } }) }
         } primaryAction: { ids in
-            if let first = ids.min() { player.play(songs, startAt: first) }
+            guard let first = ids.min(), songs.indices.contains(first) else { return }
+            if playSingle { model.playFromLibrary([songs[first]]) }
+            else { model.playFromLibrary(songs, startAt: first) }
         }
+        .onChange(of: query) { _, _ in selection = [] }
         .onDeleteCommand { if let onDelete, !selection.isEmpty { onDelete(IndexSet(selection)); selection = [] } }
     }
 }
 
 struct MacSongMenu: View {
     let songs: [Song]
+    var album: OfflineAlbum? = nil
     var onDelete: (() -> Void)? = nil
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
 
     var body: some View {
         let player = model.player
-        Button("Play") { player.play(songs) }
+        Button("Play") { model.playFromLibrary(songs) }
         Button("Play Next") { player.playNext(songs) }
-        Button("Play Last") { player.playLast(songs) }
+        Button("Add to Queue") { player.addToQueue(songs) }
         Divider()
         Button("Add to Playlist…") { router.playlistPickerSongs = songs }
         if songs.count == 1, let song = songs.first {
             Button(model.isLoved(song.id) ? "Unfavourite" : "Favourite") { model.toggleLove(song.id, kind: .song) }
         }
-        if songs.allSatisfy({ model.downloads.isDownloaded($0.id) }) {
-            Button("Remove Download") { songs.forEach { model.downloads.remove($0.id) } }
+        if let album {
+            if model.downloads.savedAlbum(album.id) == nil && !songs.isEmpty {
+                Button("Download Album") { model.downloads.downloadAlbum(album) }
+            }
         } else {
-            Button("Download") { model.downloads.download(songs) }
+            let tracks = songs.filter { !$0.isRadio }
+            if tracks.contains(where: { model.downloads.canRemoveTrack($0.id) }) {
+                Button("Remove Track Downloads") { model.downloads.removeTracks(tracks.map(\.id)) }
+            }
+            if tracks.contains(where: { !model.downloads.isDownloaded($0.id) || !model.downloads.canRemoveTrack($0.id) }) {
+                Button("Download Tracks") { model.downloads.download(tracks) }
+            }
         }
         if let song = songs.first, songs.count == 1 {
             Divider()
-            Button("Create Station") { Task { await model.playSongStation(song) } }
+            Button("Create Station") { router.go(.generated(.song(song))) }
             if let albumId = song.albumId { Button("Go to Album") { router.go(.album(albumId)) } }
             if let artistId = song.artistId { Button("Go to Artist") { router.go(.artist(artistId)) } }
+        }
+        if album == nil, songs.count == 1, let song = songs.first, !song.isRadio {
+            LibraryEditButton(edit: LibraryEdit(song))
         }
         if let onDelete {
             Divider()
@@ -337,13 +384,13 @@ struct MacSongMenu: View {
 
 struct MacPlayShuffle: View {
     let songs: [Song]
-    @Environment(Player.self) private var player
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         HStack(spacing: 10) {
-            Button { player.play(songs) } label: { Label("Play", systemImage: "play.fill").frame(minWidth: 70) }
+            Button { model.playFromLibrary(songs) } label: { Label("Play", systemImage: "play.fill").frame(minWidth: 70) }
                 .buttonStyle(.borderedProminent)
-            Button { player.play(songs, shuffled: true) } label: { Label("Shuffle", systemImage: "shuffle").frame(minWidth: 70) }
+            Button { model.playFromLibrary(songs, shuffled: true) } label: { Label("Shuffle", systemImage: "shuffle").frame(minWidth: 70) }
                 .buttonStyle(.bordered)
         }
         .controlSize(.large)
@@ -365,6 +412,9 @@ struct MacRouteView: View {
         case .album(let id): MacAlbumView(id: id)
         case .artist(let id): MacArtistView(id: id)
         case .playlist(let id): MacPlaylistView(id: id)
+        case .generated(let playlist): MacGeneratedPlaylistView(playlist: playlist)
+        case .searchResults(let query, let category): MacSearchCategoryView(query: query, category: category)
+        case .radio(let station): LiveRadioView(station: station)
         case .genre(let name): MacGenreView(genre: name)
         case .albums(let title, let type): MacAlbumGridView(title: title, type: type)
         case .artists: MacArtistsView()
@@ -373,6 +423,7 @@ struct MacRouteView: View {
         case .genres: MacGenresView()
         case .loved: MacLovedView()
         case .downloads: MacDownloadsView()
+        case .history: MacListeningHistoryView()
         }
     }
 }

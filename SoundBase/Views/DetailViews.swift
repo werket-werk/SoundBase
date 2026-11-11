@@ -11,65 +11,93 @@ struct AlbumView: View {
     @State private var more: [Album] = []
     @State private var similar: [Artist] = []
     @State private var showNotes = false
+    @State private var loadFailed = false
 
     var body: some View {
-        ScrollView {
+        Group {
             if let album {
-                let songs = album.song ?? []
-                VStack(spacing: 0) {
-                    Artwork(id: album.coverArt, size: 1000, corner: 10)
-                        .frame(width: 270)
-                        .shadow(color: .black.opacity(0.25), radius: 18, y: 10)
-                        .padding(.top, 8)
-                    Text(album.name)
-                        .font(.title2.bold())
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 18)
-                    Button { if let a = album.artistId { router.go(.artist(a)) } } label: {
-                        Text(album.artist ?? "").font(.title2).foregroundStyle(.tint)
-                    }
-                    .buttonStyle(.plain)
-                    HStack(spacing: 6) {
-                        Text([album.genre, album.year.map(String.init)].compactMap { $0 }.joined(separator: " · ").uppercased())
-                        if songs.contains(where: \.isLossless) {
-                            Label("Lossless", systemImage: "waveform").labelStyle(.titleAndIcon)
+                ScrollView {
+                    let songs = album.song ?? []
+                    let downloaded = songs.filter { model.downloads.isDownloaded($0.id) }.count
+                    VStack(spacing: 0) {
+                        Artwork(id: album.coverArt, size: 1000, corner: 10)
+                            .frame(width: 270)
+                            .shadow(color: .black.opacity(0.25), radius: 18, y: 10)
+                            .padding(.top, 8)
+                        Text(album.name)
+                            .font(.title2.bold())
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 18)
+                        Button { if let a = album.artistId { router.go(.artist(a)) } } label: {
+                            Text(album.artist ?? "").font(.title2).foregroundStyle(.tint)
                         }
-                    }
-                    .font(.caption.bold())
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 4)
+                        .buttonStyle(.plain)
+                        HStack(spacing: 6) {
+                            Text([album.genre, album.year.map(String.init)].compactMap { $0 }.joined(separator: " · ").uppercased())
+                            if songs.contains(where: \.isLossless) {
+                                Label("Lossless", systemImage: "waveform").labelStyle(.titleAndIcon)
+                            }
+                        }
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
 
-                    PlayShuffleButtons(
-                        play: { model.player.play(songs) },
-                        shuffle: { model.player.play(songs, shuffled: true) })
-                        .padding(.horizontal)
-                        .padding(.vertical, 18)
+                        if let saved = model.downloads.savedAlbum("id:\(id)") {
+                            OfflineAlbumActions(album: saved).padding(.top, 8)
+                        } else if !songs.isEmpty {
+                            if downloaded > 0 {
+                                Text("\(downloaded) of \(songs.count) tracks saved")
+                                    .font(.footnote).foregroundStyle(.secondary).padding(.top, 8)
+                            }
+                            Button {
+                                model.downloads.downloadAlbum(id: id, name: album.name, tracks: songs)
+                            } label: {
+                                Label("Download Album", systemImage: "arrow.down.circle")
+                            }
+                            .font(.subheadline)
+                            .disabled(!model.downloads.canRequestDownloads())
+                            .padding(.top, 8)
+                        }
+                        PlayShuffleButtons(
+                            play: { model.playFromLibrary(songs) },
+                            shuffle: { model.playFromLibrary(songs, shuffled: true) })
+                            .padding(.horizontal)
+                            .padding(.vertical, 18)
 
-                    if let notes = info?.notes?.strippingHTML, !notes.isEmpty {
-                        Text(notes)
+                        if let notes = info?.notes?.strippingHTML, !notes.isEmpty {
+                            Text(notes)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(showNotes ? nil : 3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal)
+                                .padding(.bottom, 12)
+                                .onTapGesture { withAnimation { showNotes.toggle() } }
+                        }
+
+                        Divider().padding(.leading)
+                        trackList(songs)
+
+                        Text("\(songs.count) songs, \(songs.totalDuration / 60) minutes")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .lineLimit(showNotes ? nil : 3)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal)
-                            .padding(.bottom, 12)
-                            .onTapGesture { withAnimation { showNotes.toggle() } }
+                            .padding()
+
+                        VStack(alignment: .leading, spacing: 30) {
+                            AlbumShelf(title: "More by \(album.artist ?? "Artist")", albums: more)
+                            ArtistShelf(title: "You Might Also Like", artists: similar)
+                        }
+                        .padding(.vertical)
                     }
-
-                    Divider().padding(.leading)
-                    trackList(songs)
-
-                    Text("\(songs.count) songs, \(songs.totalDuration / 60) minutes")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-
-                    VStack(alignment: .leading, spacing: 30) {
-                        AlbumShelf(title: "More by \(album.artist ?? "Artist")", albums: more)
-                        ArtistShelf(title: "You Might Also Like", artists: similar)
-                    }
-                    .padding(.vertical)
+                }
+            } else if let local = model.downloads.albums.first(where: { $0.id == "id:\(id)" }) {
+                OfflineTracksView(title: local.name, tracks: local.tracks, albumID: local.id)
+            } else if loadFailed {
+                ContentUnavailableView {
+                    Label("Couldn’t Open Album", systemImage: "exclamationmark.circle")
+                } actions: {
+                    Button("Retry") { Task { await load() } }
                 }
             } else {
                 ProgressView().padding(80)
@@ -84,20 +112,20 @@ struct AlbumView: View {
                     }
                     Menu {
                         let songs = album.song ?? []
-                        Button { model.downloads.download(songs) } label: { Label("Download", systemImage: "arrow.down.circle") }
                         Button { router.playlistPickerSongs = songs } label: { Label("Add to Playlist…", systemImage: "text.badge.plus") }
                         Button { model.player.playNext(songs) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
-                        Button { model.player.playLast(songs) } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
+                        Button { model.player.addToQueue(songs) } label: { Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") }
                         if let artistId = album.artistId, let name = album.artist {
-                            Button { Task { await model.playArtistStation(artistId: artistId, name: name) } } label: {
+                            Button { model.router.go(.generated(.artist(id: artistId, name: name))) } label: {
                                 Label("Create Station", systemImage: "dot.radiowaves.left.and.right")
                             }
                         }
+                        LibraryEditButton(edit: LibraryEdit(album))
                     } label: { Image(systemName: "ellipsis") }
                 }
             }
         }
-        .task(id: id) { await load() }
+        .task(id: [id, String(model.libraryRevision)]) { await load() }
     }
 
     @ViewBuilder
@@ -113,7 +141,7 @@ struct AlbumView: View {
                 }
                 SongRow(song: song, number: song.track ?? i + 1,
                         subtitle: song.artist != album?.artist ? song.artist : nil) {
-                    model.player.play(songs, startAt: i)
+                    model.playFromLibrary(songs, startAt: i)
                 }
                 .padding(.horizontal)
                 Divider().padding(.leading, 54)
@@ -122,7 +150,12 @@ struct AlbumView: View {
     }
 
     private func load() async {
-        guard let client = model.client, let detail = try? await client.album(id) else { return }
+        loadFailed = false
+        guard let client = model.client, let detail = try? await client.album(id) else {
+            if !Task.isCancelled { album = nil; loadFailed = true }
+            return
+        }
+        guard !Task.isCancelled else { return }
         album = detail
         async let i = try? client.albumInfo(id)
         if let artistId = detail.artistId {
@@ -141,6 +174,7 @@ struct ArtistView: View {
     let id: String
     @Environment(AppModel.self) private var model
     @State private var artist: ArtistDetail?
+    @State private var loadFailed = false
     @State private var info: ArtistInfo?
     @State private var top: [Song] = []
     @State private var showAllTop = false
@@ -155,7 +189,7 @@ struct ArtistView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             ShelfHeader(title: "Top Songs")
                             ForEach(Array(top.prefix(showAllTop ? 20 : 5).enumerated()), id: \.element.id) { i, song in
-                                SongRow(song: song, subtitle: song.album) { model.player.play(top, startAt: i) }
+                                SongRow(song: song, subtitle: song.album) { model.playFromLibrary(top, startAt: i) }
                                     .padding(.horizontal)
                             }
                             if top.count > 5 {
@@ -198,6 +232,12 @@ struct ArtistView: View {
                     }
                 }
                 .padding(.bottom, 30)
+            } else if loadFailed {
+                ContentUnavailableView {
+                    Label("Couldn’t Open Artist", systemImage: "exclamationmark.circle")
+                } actions: {
+                    Button("Retry") { Task { await load() } }
+                }
             } else {
                 ProgressView().padding(80).frame(maxWidth: .infinity)
             }
@@ -211,15 +251,16 @@ struct ArtistView: View {
                         Image(systemName: model.isLoved(artist.id) ? "star.fill" : "star")
                     }
                     Menu {
-                        Button { Task { await model.playArtistStation(artistId: artist.id, name: artist.name) } } label: {
+                        Button { model.router.go(.generated(.artist(id: artist.id, name: artist.name))) } label: {
                             Label("Create Station", systemImage: "dot.radiowaves.left.and.right")
                         }
                         Button { Task { await shuffleAll(artist) } } label: { Label("Shuffle All", systemImage: "shuffle") }
+                        LibraryEditButton(edit: LibraryEdit(artist))
                     } label: { Image(systemName: "ellipsis") }
                 }
             }
         }
-        .task(id: id) { await load() }
+        .task(id: [id, String(model.libraryRevision)]) { await load() }
     }
 
     private func header(_ artist: ArtistDetail) -> some View {
@@ -233,7 +274,7 @@ struct ArtistView: View {
                 Text(artist.name).font(.largeTitle.bold()).foregroundStyle(.white).lineLimit(2)
                 Spacer()
                 Button {
-                    if top.isEmpty { Task { await shuffleAll(artist) } } else { model.player.play(top) }
+                    if top.isEmpty { Task { await shuffleAll(artist) } } else { model.playFromLibrary(top) }
                 } label: {
                     Image(systemName: "play.fill")
                         .font(.title2)
@@ -251,11 +292,16 @@ struct ArtistView: View {
         guard let client = model.client else { return }
         var songs: [Song] = []
         for album in artist.album ?? [] { songs += (try? await client.album(album.id))?.song ?? [] }
-        model.player.play(songs, shuffled: true)
+        model.playFromLibrary(songs, shuffled: true)
     }
 
     private func load() async {
-        guard let client = model.client, let detail = try? await client.artist(id) else { return }
+        loadFailed = false
+        guard let client = model.client, let detail = try? await client.artist(id) else {
+            if !Task.isCancelled { artist = nil; loadFailed = true }
+            return
+        }
+        guard !Task.isCancelled else { return }
         artist = detail
         async let i = try? client.artistInfo(id)
         async let t = try? client.topSongs(artist: detail.name)
@@ -271,68 +317,156 @@ struct PlaylistView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var playlist: PlaylistDetail?
+    @State private var query = ""
+    @State private var loadFailed = false
+    @State private var writeError: String?
+    @State private var saving = false
     @State private var confirmDelete = false
+    @State private var renaming = false
+    @State private var name = ""
+    @State private var reorder = false
+
+    private var downloaded: DownloadedPlaylist? { model.downloads.playlistIndex.playlists[id] }
+    private var canEdit: Bool {
+        guard let playlist else { return false }
+        return playlist.readonly != true && (playlist.owner == nil || playlist.owner == model.credentials?.username)
+    }
 
     var body: some View {
-        List {
+        Group {
             if let playlist {
-                let songs = playlist.entry ?? []
+                onlinePlaylist(playlist)
+            } else if let downloaded {
+                OfflineTracksView(title: downloaded.name, tracks: downloaded.tracks, playlist: downloaded)
+            } else if loadFailed {
+                ContentUnavailableView {
+                    Label("Couldn’t Open Playlist", systemImage: "exclamationmark.circle")
+                } actions: {
+                    Button("Retry") { Task { await load() } }
+                }
+            } else {
+                ProgressView().frame(maxWidth: .infinity)
+            }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            Menu {
+                let pinned = model.pinnedPlaylistIDs.contains(id)
+                Button(pinned ? "Unpin from Library" : "Pin to Library",
+                       systemImage: pinned ? "pin.slash" : "pin") { model.togglePlaylistPin(id) }
+                if let playlist {
+                    Button("Download", systemImage: "arrow.down.circle") {
+                        model.downloads.downloadPlaylist(playlist.downloadedCopy)
+                    }
+                    Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                        model.player.playNext(playlist.entry ?? [])
+                    }
+                    if canEdit {
+                        Button("Rename", systemImage: "pencil") { name = playlist.name; renaming = true }
+                        Button("Reorder Tracks", systemImage: "list.number") { reorder = true }
+                            .disabled((playlist.entry ?? []).count < 2)
+                        Button("Delete Playlist", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                    }
+                }
+            } label: { Image(systemName: "ellipsis") }
+            .disabled(saving || (playlist == nil && downloaded == nil))
+        }
+        .alert("Rename Playlist", isPresented: $renaming) {
+            TextField("Playlist Name", text: $name)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty else { return }
+                write { try await $0.renamePlaylist(id, name: title) }
+            }
+        }
+        .alert("Couldn’t Update Playlist", isPresented: Binding(
+            get: { writeError != nil }, set: { if !$0 { writeError = nil } }
+        )) { Button("OK", role: .cancel) {} } message: { Text(writeError ?? "") }
+        .confirmationDialog("Delete this playlist?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete Playlist", role: .destructive) {
+                write(delete: true) { try await $0.deletePlaylist(id) }
+            }
+        }
+        .sheet(isPresented: $reorder) {
+            if let playlist {
+                PlaylistOrderEditor(playlist: playlist) { updated in self.playlist = updated }
+            }
+        }
+        .task(id: id) { await load() }
+    }
+
+    private func onlinePlaylist(_ playlist: PlaylistDetail) -> some View {
+        let songs = playlist.entry ?? []
+        return List {
+            if query.isEmpty {
                 VStack(spacing: 10) {
                     Artwork(id: playlist.coverArt, size: 800, corner: 10)
                         .frame(width: 240)
-                        .shadow(color: .black.opacity(0.2), radius: 14, y: 8)
+                        .shadow(color: .black.opacity(0.2), radius: 18, y: 10)
                     Text(playlist.name).font(.title2.bold()).multilineTextAlignment(.center)
                     if let owner = playlist.owner { Text(owner).font(.headline).foregroundStyle(.tint) }
                     if let comment = playlist.comment, !comment.isEmpty {
                         Text(comment).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }
-                    PlayShuffleButtons(play: { model.player.play(songs) }, shuffle: { model.player.play(songs, shuffled: true) })
+                    if let downloaded { OfflinePlaylistActions(playlist: downloaded, dismissAfterRemoval: false) }
+                    PlayShuffleButtons(play: { model.playFromLibrary(songs) },
+                                       shuffle: { model.playFromLibrary(songs, shuffled: true) })
                         .padding(.top, 6)
                 }
                 .frame(maxWidth: .infinity)
                 .listRowSeparator(.hidden)
-
-                ForEach(Array(songs.enumerated()), id: \.offset) { i, song in
-                    SongRow(song: song) { model.player.play(songs, startAt: i) }
-                }
-                .onDelete { offsets in
-                    Task {
-                        try? await model.client?.removeFromPlaylist(id, indexes: Array(offsets))
-                        await load()
-                    }
-                }
-
+            }
+            let matches = songs.indices.filter { songs[$0].matchesDownloadSearch(query) }
+            ForEach(matches, id: \.self) { i in
+                SongRow(song: songs[i]) { model.playFromLibrary(songs, startAt: i) }
+            }
+            .onDelete(perform: canEdit && query.isEmpty && !saving ? remove : nil)
+            if query.isEmpty {
                 Text("\(songs.count) songs, \(songs.totalDuration / 60) minutes")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                    .listRowSeparator(.hidden)
-            } else {
-                ProgressView().frame(maxWidth: .infinity).padding(60)
+                    .font(.subheadline).foregroundStyle(.secondary).listRowSeparator(.hidden)
+            } else if matches.isEmpty {
+                ContentUnavailableView.search(text: query)
             }
         }
         .listStyle(.plain)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            Menu {
-                Button { model.downloads.download(playlist?.entry ?? []) } label: { Label("Download", systemImage: "arrow.down.circle") }
-                Button { model.player.playNext(playlist?.entry ?? []) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
-                Button(role: .destructive) { confirmDelete = true } label: { Label("Delete Playlist", systemImage: "trash") }
-            } label: { Image(systemName: "ellipsis") }
-        }
-        .confirmationDialog("Delete this playlist?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Delete Playlist", role: .destructive) {
-                Task {
-                    try? await model.client?.deletePlaylist(id)
-                    await model.refreshPlaylists()
-                    dismiss()
-                }
-            }
-        }
-        .refreshable { await load() }
-        .task(id: id) { await load() }
+        .searchable(text: $query, prompt: "Find in Playlist")
+        .refreshable { if !saving { await load() } }
     }
 
     private func load() async {
-        playlist = try? await model.client?.playlist(id)
+        loadFailed = false
+        guard let client = model.client, let opened = try? await client.playlist(id) else {
+            if !Task.isCancelled { loadFailed = true }
+            return
+        }
+        guard !Task.isCancelled, model.client === client else { return }
+        playlist = opened
+        model.recordPlaylistOpen(id, using: client)
+    }
+
+    private func remove(_ offsets: IndexSet) {
+        write { try await $0.removeFromPlaylist(id, indexes: Array(offsets)) }
+    }
+
+    private func write(delete: Bool = false, operation: @escaping (SubsonicClient) async throws -> Void) {
+        guard !saving, let client = model.client else { return }
+        saving = true
+        Task {
+            defer { saving = false }
+            do {
+                try await operation(client)
+                if delete {
+                    if model.pinnedPlaylistIDs.contains(id) { model.togglePlaylistPin(id) }
+                    dismiss()
+                } else {
+                    await load()
+                }
+                await model.refreshPlaylists()
+            } catch {
+                writeError = error.localizedDescription
+            }
+        }
     }
 }
 
@@ -346,8 +480,8 @@ struct GenreView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                MixTile(title: "\(genre) Station", subtitle: "Play", systemImage: "dot.radiowaves.left.and.right", colors: Palette.stable(genre), width: nil, height: 120) {
-                    Task { await model.playGenreStation(genre) }
+                MixTile(title: "\(genre) Station", subtitle: "Station", systemImage: "dot.radiowaves.left.and.right", colors: Palette.stable(genre), width: nil, height: 120) {
+                    model.router.go(.generated(.genre(genre)))
                 }
                 .padding(.horizontal)
                 AlbumGrid(albums: albums)
@@ -377,5 +511,42 @@ struct AlbumGrid: View {
             }
         }
         .padding(.horizontal)
+    }
+}
+
+struct GeneratedPlaylistView: View {
+    let playlist: GeneratedPlaylist
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        GeneratedPlaylistContent(playlist: playlist) { songs in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 16) {
+                            Artwork(id: songs.first?.coverArt, size: 400, corner: 12)
+                                .frame(width: 96, height: 96)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Label(playlist.kind, systemImage: playlist.icon)
+                                    .font(.headline)
+                                Text("\(songs.count) tracks")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        PlayShuffleButtons(
+                            play: { model.playFromLibrary(songs) },
+                            shuffle: { model.playFromLibrary(songs, shuffled: true) }
+                        )
+                        SaveMixButton(title: playlist.title, songs: songs)
+                    }
+                    .padding(.bottom, 12)
+
+                    ForEach(Array(songs.enumerated()), id: \.element.id) { i, song in
+                        SongRow(song: song) { model.playFromLibrary(songs, startAt: i) }
+                    }
+                }
+                .padding()
+            }
+        }
     }
 }

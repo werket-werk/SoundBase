@@ -16,7 +16,7 @@ enum WatchScreenshotDirector {
         let scene = env["SB_SCENE"] ?? "home"
 
         guard let hit = try? await client.search("Midnight Signals", artists: 0, albums: 3, songs: 0).album?.first,
-              let album = try? await client.album(hit.id), let songs = album.song else { return }
+              let album = try? await client.album(hit.id), let songs = album.song, !songs.isEmpty else { return }
 
         // Pretend the iPhone is playing something, so the remote screens have content.
         session.title = songs[0].title
@@ -34,27 +34,26 @@ enum WatchScreenshotDirector {
 
         switch scene {
         case "remote":
-            store.path = [.remote]
+            store.path = [.nowPlaying]
         case "album":
-            store.download(Array(songs.prefix(3)))
+            store.downloads.download(Array(songs.prefix(3)))
             try? await Task.sleep(for: .seconds(4))
             store.path = [.album(id: album.id, name: album.name)]
         case "downloaded":
-            store.download(songs)
+            store.downloads.download(songs)
             if let other = try? await client.search("Saltwater", artists: 0, albums: 1, songs: 0).album?.first,
                let more = try? await client.album(other.id)?.song {
-                store.download(more)
+                store.downloads.download(more)
             }
             try? await Task.sleep(for: .seconds(8))
             store.path = [.downloaded]
         case "nowplaying":
-            store.player.play(songs)
+            session.reachable = false
+            await session.play(songs)
             try? await Task.sleep(for: .seconds(2))
             store.path = [.nowPlaying]
         default:
-            store.player.play(songs)
-            try? await Task.sleep(for: .seconds(1))
-            store.player.toggle()
+            break
         }
     }
 }

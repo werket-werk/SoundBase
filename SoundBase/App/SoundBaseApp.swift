@@ -65,8 +65,9 @@ struct MainTabView: View {
                 NavigationStack(path: $router.searchPath) { SearchView().routes() }
             }
         }
-        .miniPlayer()
-        .sheet(isPresented: $router.showNowPlaying) {
+        .libraryEditor(model: model)
+        .miniPlayer(visible: model.player.current != nil || PhoneSession.shared.macPlaybackTitle != nil)
+        .fullScreenCover(isPresented: $router.showNowPlaying) {
             NowPlayingView()
         }
         .sheet(isPresented: $router.showSettings) { SettingsView() }
@@ -80,16 +81,21 @@ struct MainTabView: View {
 
 extension View {
     @ViewBuilder
-    func miniPlayer() -> some View {
-        if #available(iOS 26.0, *) {
-            tabViewBottomAccessory { MiniPlayerView() }
+    func miniPlayer(visible: Bool) -> some View {
+        if #available(iOS 26.1, *) {
+            tabViewBottomAccessory(isEnabled: visible) { MiniPlayerView() }
+        } else if #available(iOS 26.0, *) {
+            if visible { tabViewBottomAccessory { MiniPlayerView() } }
+            else { self }
         } else {
             safeAreaInset(edge: .bottom, spacing: 0) {
-                MiniPlayerView()
-                    .padding(.horizontal, 10)
-                    .background(.bar, in: RoundedRectangle(cornerRadius: 14))
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 54)
+                if visible {
+                    MiniPlayerView()
+                        .padding(.horizontal, 10)
+                        .background(.bar, in: RoundedRectangle(cornerRadius: 14))
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 54)
+                }
             }
         }
     }
@@ -107,6 +113,9 @@ struct RouteView: View {
         case .album(let id): AlbumView(id: id)
         case .artist(let id): ArtistView(id: id)
         case .playlist(let id): PlaylistView(id: id)
+        case .generated(let playlist): GeneratedPlaylistView(playlist: playlist)
+        case .searchResults(let query, let category): SearchCategoryView(query: query, category: category)
+        case .radio(let station): LiveRadioView(station: station)
         case .genre(let name): GenreView(genre: name)
         case .albums(let title, let type): AlbumGridView(title: title, type: type)
         case .artists: ArtistsListView()
@@ -115,6 +124,7 @@ struct RouteView: View {
         case .genres: GenresView()
         case .loved: LovedView()
         case .downloads: DownloadsView()
+        case .history: ListeningHistoryView()
         }
     }
 }

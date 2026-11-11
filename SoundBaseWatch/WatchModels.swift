@@ -10,141 +10,62 @@ import UIKit
 @Observable @MainActor
 final class WatchStore {
     private(set) var client: SubsonicClient?
-    private(set) var downloads: [String: Song] = [:]
-    private(set) var inProgress: Set<String> = []
+    let downloads = DownloadManager()
     let player = WatchPlayer()
     var path: [WatchRoute] = []
 
-    @ObservationIgnored private var pending: [Song] = []
-    @ObservationIgnored private var active = 0
-    @ObservationIgnored private let dir: URL
     @ObservationIgnored private let credsKey = "watchCreds"
 
     init() {
-        dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Music", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        if let data = try? Data(contentsOf: dir.appendingPathComponent("index.json")),
-           let list = try? JSONDecoder().decode([Song].self, from: data) {
-            downloads = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        if let data = UserDefaults.standard.data(forKey: credsKey) {
+            setCredentials(data)
+        } else {
+            let key = UserDefaults.standard.string(forKey: "watchDownloadLibrary")
+            downloads.openOfflineLibrary(key.flatMap { $0.count == 64 && $0.allSatisfy(\.isHexDigit) ? $0 : nil })
         }
-        if let data = UserDefaults.standard.data(forKey: credsKey) { setCredentials(data) }
         player.urlProvider = { [weak self] song in self?.playbackURL(for: song) }
         player.artworkProvider = { [weak self] song in await self?.artwork(for: song) }
     }
 
     func setCredentials(_ data: Data) {
+        if data.isEmpty {
+            UserDefaults.standard.removeObject(forKey: credsKey)
+            client = nil
+            downloads.client = nil
+            return
+        }
         guard let creds = try? JSONDecoder().decode(ServerCredentials.self, from: data) else { return }
         if client?.creds == creds { return }
+        let oldKey = UserDefaults.standard.string(forKey: "watchDownloadLibrary")
+        if oldKey != creds.libraryKey { player.clear() }
         UserDefaults.standard.set(data, forKey: credsKey)
-        client = SubsonicClient(creds: creds)
+        UserDefaults.standard.set(creds.libraryKey, forKey: "watchDownloadLibrary")
+        let client = SubsonicClient(creds: creds)
+        self.client = client
+        downloads.client = client
     }
-
-    var downloadedSongs: [Song] {
-        downloads.values.sorted { ($0.artist ?? "", $0.album ?? "", $0.track ?? 0) < ($1.artist ?? "", $1.album ?? "", $1.track ?? 0) }
-    }
-
-    func isDownloaded(_ id: String) -> Bool { downloads[id] != nil }
 
     func playbackURL(for song: Song) -> URL? {
-        let local = fileURL(song.id)
-        if downloads[song.id] != nil, FileManager.default.fileExists(atPath: local.path) { return local }
-        return song.shouldTranscode(toKbps: Self.quality)
-            ? client?.streamURL(song.id, maxBitRate: Self.quality, format: "aac")
+        if let local = downloads.localURL(for: song.id) { return local }
+        let quality = DownloadManager.watchQuality
+        return song.shouldTranscode(toKbps: quality)
+            ? client?.streamURL(song.id, maxBitRate: quality, format: "aac")
             : client?.streamURL(song.id, maxBitRate: 0, format: "raw")
     }
 
-    /// Watch downloads and streams use AAC 128 kbps (about 1 MB per minute) unless the
-    /// original is already a small lossy file.
-    func download(_ songs: [Song]) {
-        for song in songs where downloads[song.id] == nil && !inProgress.contains(song.id) {
-            inProgress.insert(song.id)
-            pending.append(song)
-        }
-        pump()
-    }
-
-    func remove(_ id: String) {
-        try? FileManager.default.removeItem(at: fileURL(id))
-        downloads.removeValue(forKey: id)
-        persist()
-    }
-
-    func removeAll() {
-        for id in downloads.keys { try? FileManager.default.removeItem(at: fileURL(id)) }
-        downloads = [:]
-        persist()
-    }
-
-    var totalBytes: Int64 {
-        downloads.keys.reduce(0) { total, id in
-            let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL(id).path)
-            return total + ((attrs?[.size] as? NSNumber)?.int64Value ?? 0)
-        }
-    }
-
-    private func pump() {
-        while active < 2, !pending.isEmpty {
-            let song = pending.removeFirst()
-            active += 1
-            Task {
-                await fetch(song)
-                active -= 1
-                pump()
-            }
-        }
-    }
-
-    private func fetch(_ song: Song) async {
-        defer { inProgress.remove(song.id) }
-        guard let client else { return }
-        var stored = song
-        let url: URL
-        if song.shouldTranscode(toKbps: Self.quality) {
-            url = client.streamURL(song.id, maxBitRate: Self.quality, format: "aac")
-            stored.suffix = "aac"
-            stored.bitRate = Self.quality
-        } else {
-            url = client.downloadURL(song.id)
-        }
-        guard let (tmp, response) = try? await URLSession.shared.download(from: url),
-              (response as? HTTPURLResponse)?.statusCode ?? 200 < 300 else { return }
-        let dest = fileURL(stored)
-        try? FileManager.default.removeItem(at: dest)
-        guard (try? FileManager.default.moveItem(at: tmp, to: dest)) != nil else { return }
-        downloads[song.id] = stored
-        if let cover = song.coverArt, !FileManager.default.fileExists(atPath: coverURL(cover).path),
-           let (data, _) = try? await URLSession.shared.data(from: client.coverURL(cover, size: 300)) {
-            try? data.write(to: coverURL(cover))
-        }
-        persist()
-    }
-
-    static let quality = 128
-
-    private func fileURL(_ id: String) -> URL {
-        downloads[id].map(fileURL) ?? dir.appendingPathComponent("\(id).aac")
-    }
-
-    private func coverURL(_ id: String) -> URL { dir.appendingPathComponent("cover-\(id).jpg") }
-
     /// Album artwork for Now Playing: saved with downloads, otherwise fetched from the server.
     func artwork(for song: Song) async -> UIImage? {
+        if let image = savedArtwork(for: song) { return image }
         guard let cover = song.coverArt else { return nil }
-        if let data = try? Data(contentsOf: coverURL(cover)) { return UIImage(data: data) }
         guard let client, let (data, _) = try? await URLSession.shared.data(from: client.coverURL(cover, size: 300)) else { return nil }
         return UIImage(data: data)
     }
 
-    private func fileURL(_ song: Song) -> URL {
-        dir.appendingPathComponent("\(song.id).\(song.suffix ?? "aac")")
+    func savedArtwork(for song: Song) -> UIImage? {
+        guard let cover = song.coverArt, let data = try? Data(contentsOf: downloads.artworkURL(cover)) else { return nil }
+        return UIImage(data: data)
     }
 
-    private func persist() {
-        if let data = try? JSONEncoder().encode(Array(downloads.values)) {
-            try? data.write(to: dir.appendingPathComponent("index.json"), options: .atomic)
-        }
-    }
 }
 
 // MARK: - On-watch player (Bluetooth headphones / speaker)
@@ -154,13 +75,21 @@ final class WatchPlayer {
     private(set) var queue: [Song] = []
     private(set) var index = 0
     private(set) var isPlaying = false
+    private(set) var error: String?
     var current: Song? { queue.indices.contains(index) ? queue[index] : nil }
+    var elapsed: Double { av.currentTime().seconds.isFinite ? max(0, av.currentTime().seconds) : 0 }
+    var currentArtwork: UIImage? { artwork?.id == current?.id ? artwork?.image : nil }
+    var transferSnapshot: PlaybackTransfer? {
+        guard current != nil else { return nil }
+        return PlaybackTransfer(queue: queue, index: index, position: elapsed, playing: isPlaying)
+    }
 
     @ObservationIgnored var urlProvider: ((Song) -> URL?)?
     @ObservationIgnored var artworkProvider: ((Song) async -> UIImage?)?
-    @ObservationIgnored private var artwork: (id: String, image: UIImage)?
+    private var artwork: (id: String, image: UIImage)?
     @ObservationIgnored private let av = AVQueuePlayer()
     @ObservationIgnored private var kvo: NSKeyValueObservation?
+    @ObservationIgnored private var itemObservation: NSKeyValueObservation?
 
     init() {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, policy: .longFormAudio)
@@ -171,33 +100,64 @@ final class WatchPlayer {
             MainActor.assumeIsolated { self?.advance() }
         }
         let center = MPRemoteCommandCenter.shared()
-        center.playCommand.addTarget { [weak self] _ in MainActor.assumeIsolated { self?.av.play() }; return .success }
-        center.pauseCommand.addTarget { [weak self] _ in MainActor.assumeIsolated { self?.av.pause() }; return .success }
-        center.togglePlayPauseCommand.addTarget { [weak self] _ in MainActor.assumeIsolated { self?.toggle() }; return .success }
-        center.nextTrackCommand.addTarget { [weak self] _ in MainActor.assumeIsolated { self?.next() }; return .success }
-        center.previousTrackCommand.addTarget { [weak self] _ in MainActor.assumeIsolated { self?.previous() }; return .success }
+        center.playCommand.addTarget { [weak self] _ in Task { @MainActor in self?.resume() }; return .success }
+        center.pauseCommand.addTarget { [weak self] _ in Task { @MainActor in self?.pause() }; return .success }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in Task { @MainActor in self?.toggle() }; return .success }
+        center.nextTrackCommand.addTarget { [weak self] _ in Task { @MainActor in self?.next() }; return .success }
+        center.previousTrackCommand.addTarget { [weak self] _ in Task { @MainActor in self?.previous() }; return .success }
     }
 
-    /// Activating the session asks the user to pick Bluetooth headphones if none are connected.
-    func play(_ songs: [Song], startAt: Int = 0, shuffled: Bool = false) {
-        guard !songs.isEmpty else { return }
-        AVAudioSession.sharedInstance().activate(options: []) { success, _ in
-            guard success else { return }
-            Task { @MainActor in
-                if shuffled { self.queue = songs.shuffled(); self.index = 0 }
-                else { self.queue = songs; self.index = min(startAt, songs.count - 1) }
-                self.start()
+    func prepare(_ transfer: PlaybackTransfer) async -> URL? {
+        guard let song = transfer.song, let url = urlProvider?(song),
+              (try? await AVURLAsset(url: url).load(.isPlayable)) == true else { return nil }
+        if transfer.playing {
+            guard (try? await AVAudioSession.sharedInstance().activate(options: [])) == true else { return nil }
+        }
+        return url
+    }
+
+    func receive(_ transfer: PlaybackTransfer, url: URL) {
+        queue = transfer.queue
+        index = transfer.index
+        start(url: url, position: transfer.position, playing: transfer.playing)
+    }
+
+    func pause() { av.pause(); syncStatus() }
+
+    private func resume() {
+        guard let id = current?.id else { return }
+        Task {
+            let activated = (try? await AVAudioSession.sharedInstance().activate(options: [])) == true
+            guard current?.id == id else { return }
+            guard activated else {
+                error = "Choose an audio output to play on Apple Watch."
+                return
             }
+            if av.currentItem == nil { start() } else { av.play() }
         }
     }
 
+    func clear() {
+        pause()
+        av.removeAllItems()
+        queue = []
+        index = 0
+        updateNowPlaying()
+    }
+
     func toggle() {
-        if isPlaying { av.pause() } else if av.currentItem == nil { start() } else { av.play() }
+        if isPlaying { pause() } else { resume() }
     }
 
     func next() {
         guard index + 1 < queue.count else { av.pause(); return }
         index += 1
+        start()
+    }
+
+    func jump(to index: Int) {
+        guard queue.indices.contains(index) else { return }
+        self.index = index
         start()
     }
 
@@ -211,12 +171,28 @@ final class WatchPlayer {
         if index + 1 < queue.count { index += 1; start() } else { isPlaying = false }
     }
 
-    private func start() {
+    private func start(url preparedURL: URL? = nil, position: Double = 0, playing: Bool = true) {
+        error = nil
         av.removeAllItems()
-        guard let song = current, let url = urlProvider?(song) else { return }
-        av.insert(AVPlayerItem(url: url), after: nil)
-        av.play()
-        updateNowPlaying()
+        guard let song = current, let url = preparedURL ?? urlProvider?(song) else {
+            error = "This track is unavailable on Apple Watch."
+            return
+        }
+        let item = AVPlayerItem(url: url)
+        av.insert(item, after: nil)
+        itemObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            Task { @MainActor in
+                guard let self, self.av.currentItem === item else { return }
+                self.pause()
+                self.error = "This track couldn’t play on Apple Watch."
+            }
+        }
+        if position > 0 {
+            av.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+        if playing { av.play() }
+        syncStatus()
         let id = song.id
         Task {
             guard let image = await artworkProvider?(song), current?.id == id else { return }
@@ -264,11 +240,164 @@ final class WatchSession: NSObject, WCSessionDelegate {
     var artwork: UIImage?
     var upNext: [String] = []
     var reachable = false
+    var songID: String?
+    var reportedDevice: PlaybackDevice = .phone
+    var remoteDevices: [PlaybackDevice] = [.phone]
+    private(set) var switching = false
+    private(set) var commandError: String?
+    private(set) var localLoved = false
+    private var selection: PlaybackDevice?
     var accent = AccentTheme.from(UserDefaults.standard.string(forKey: AccentTheme.storageKey))
 
     @ObservationIgnored weak var store: WatchStore?
 
     var phoneIsPlayingSomething: Bool { title != "Not Playing" && !title.isEmpty }
+    var device: PlaybackDevice {
+        if let selection { return selection }
+        if store?.player.current != nil { return .watch }
+        return phoneIsPlayingSomething ? reportedDevice : .watch
+    }
+    var availableDevices: [PlaybackDevice] { [.watch] + (reachable ? remoteDevices : []) }
+    var currentSongID: String? { device == .watch ? store?.player.current?.id : songID }
+    var playing: Bool { device == .watch ? store?.player.isPlaying == true : isPlaying }
+    var currentTitle: String { device == .watch ? store?.player.current?.title ?? "Not Playing" : title }
+
+    func play(_ songs: [Song], startAt index: Int = 0, shuffled: Bool = false) async {
+        let queue = shuffled ? songs.shuffled() : songs
+        let transfer = PlaybackTransfer(queue: queue, index: shuffled ? 0 : index, position: 0, playing: true)
+        let target = availableDevices.contains(device) ? device : .watch
+        await changePlayback(to: target, replacement: transfer)
+    }
+
+    func select(_ target: PlaybackDevice) async {
+        guard target != device else { return }
+        await changePlayback(to: target, replacement: nil)
+    }
+
+    func dismissError() { commandError = nil }
+
+    private func changePlayback(to target: PlaybackDevice, replacement: PlaybackTransfer?) async {
+        guard let player = store?.player, !switching, availableDevices.contains(target) else { return }
+        switching = true
+        commandError = nil
+        defer { switching = false }
+        let source = device
+        let id = UUID().uuidString
+        var existing: PlaybackTransfer?
+        if source != target || replacement == nil {
+            if source == .watch {
+                existing = player.transferSnapshot
+            } else if reachable, phoneIsPlayingSomething {
+                existing = PlaybackTransfer.decode(await request(.snapshot, device: source)?[WatchKey.transfer])
+                if existing == nil {
+                    commandError = "This queue can’t move from \(source.name)."
+                    return
+                }
+            }
+        }
+        guard let transfer = replacement ?? existing else {
+            selection = target
+            return
+        }
+        let preparedURL: URL?
+        if target == .watch {
+            preparedURL = await player.prepare(transfer)
+            guard preparedURL != nil else {
+                commandError = "Apple Watch couldn’t open this track or find an audio output."
+                return
+            }
+        } else {
+            preparedURL = nil
+            guard let data = transfer.encoded,
+                  await request(.prepare, device: target, fields: [WatchKey.transaction: id, WatchKey.transfer: data])?[WatchKey.success] as? Bool == true else {
+                commandError = "Couldn’t prepare playback on \(target.name)."
+                return
+            }
+        }
+
+        var resume = transfer
+        let moving = source != target && existing != nil
+        if moving, let existing {
+            if source == .watch {
+                if replacement == nil, let latest = player.transferSnapshot { resume = latest }
+                player.pause()
+            } else {
+                let reply = await request(.release, device: source, fields: [
+                    WatchKey.transaction: id, WatchKey.songID: existing.song?.id ?? ""
+                ])
+                guard let latest = PlaybackTransfer.decode(reply?[WatchKey.transfer]) else {
+                    _ = await request(.cancel, device: source, fields: [WatchKey.transaction: id])
+                    if target != .watch { _ = await request(.cancel, device: target, fields: [WatchKey.transaction: id]) }
+                    commandError = "Couldn’t pause \(source.name)."
+                    return
+                }
+                if replacement == nil { resume = latest }
+            }
+        }
+
+        if let preparedURL {
+            player.receive(resume, url: preparedURL)
+        } else {
+            let fields: [String: Any] = [WatchKey.transaction: id, WatchKey.elapsed: resume.position,
+                                         WatchKey.isPlaying: resume.playing]
+            let reply = await request(.commit, device: target, fields: fields)
+            let uncertain = reply == nil || reply?[WatchKey.uncertain] as? Bool == true
+            let confirmation = uncertain ? await request(.committed, device: target, fields: fields) : reply
+            guard confirmation?[WatchKey.success] as? Bool == true else {
+                let unknown = confirmation == nil || confirmation?[WatchKey.uncertain] as? Bool == true
+                if !unknown, moving, let existing {
+                    if source == .watch, existing.playing { player.toggle() }
+                    else if source != .watch {
+                        _ = await request(.cancel, device: source, fields: [WatchKey.transaction: id])
+                    }
+                }
+                commandError = unknown ? "Couldn’t confirm playback on \(target.name)." : "Couldn’t move playback to \(target.name)."
+                return
+            }
+        }
+        if moving {
+            if source == .watch { player.clear() }
+            else { _ = await request(.finish, device: source, fields: [WatchKey.transaction: id]) }
+        }
+        selection = target
+        if target != .watch { send(.requestState) }
+    }
+
+    func control(_ command: WatchCommand, index: Int? = nil) {
+        guard !switching else { return }
+        if device != .watch {
+            guard availableDevices.contains(device) else {
+                commandError = "\(device.name) is unavailable."
+                return
+            }
+            send(command, index: index)
+            return
+        }
+        guard let player = store?.player else { return }
+        switch command {
+        case .togglePlay: player.toggle()
+        case .previous: player.previous()
+        case .next: player.next()
+        case .jump: if let index { player.jump(to: player.index + 1 + index) }
+        case .love:
+            guard let client = store?.client, let id = player.current?.id else { return }
+            Task {
+                let newValue = !localLoved
+                do {
+                    try await client.setStar(id, kind: .song, on: newValue)
+                    if player.current?.id == id { localLoved = newValue }
+                } catch { commandError = "Couldn’t update Favourite." }
+            }
+        default: break
+        }
+    }
+
+    func refreshLocalFavourite() async {
+        localLoved = false
+        guard let client = store?.client, let id = store?.player.current?.id,
+              let songs = try? await client.starred().song, store?.player.current?.id == id else { return }
+        localLoved = songs.contains { $0.id == id }
+    }
 
     func start(store: WatchStore) {
         self.store = store
@@ -279,39 +408,64 @@ final class WatchSession: NSObject, WCSessionDelegate {
 
     func elapsed(at date: Date) -> Double {
         guard isPlaying else { return elapsedAt }
-        return min(duration, elapsedAt + date.timeIntervalSince1970 - timestamp)
+        return max(0, min(duration, elapsedAt + date.timeIntervalSince1970 - timestamp))
     }
 
     func send(_ command: WatchCommand, index: Int? = nil) {
-        switch command {
-        case .togglePlay: isPlaying.toggle()
-        case .love: loved.toggle()
-        default: break
+        Task {
+            var fields: [String: Any] = [:]
+            if let index { fields[WatchKey.index] = index }
+            guard let reply = await request(command, device: device, fields: fields),
+                  reply[WatchKey.success] as? Bool != false else {
+                if command != .requestState { commandError = "Couldn’t reach \(device.name)." }
+                return
+            }
+            apply(reply)
         }
-        guard WCSession.default.activationState == .activated, WCSession.default.isReachable else { return }
-        var message: [String: Any] = [WatchKey.command: command.rawValue]
-        if let index { message[WatchKey.index] = index }
-        WCSession.default.sendMessage(message, replyHandler: { reply in
-            Task { @MainActor in self.apply(reply) }
-        }, errorHandler: nil)
+    }
+
+    private func request(_ command: WatchCommand, device: PlaybackDevice,
+                         fields: [String: Any] = [:]) async -> [String: Any]? {
+        let session = WCSession.default
+        guard session.activationState == .activated, session.isReachable else { return nil }
+        var message = fields
+        message[WatchKey.command] = command.rawValue
+        if device != .watch { message[WatchKey.destination] = device.rawValue }
+        return await withCheckedContinuation { continuation in
+            session.sendMessage(message, replyHandler: { continuation.resume(returning: $0) },
+                                errorHandler: { _ in continuation.resume(returning: nil) })
+        }
     }
 
     func apply(_ ctx: [String: Any]) {
-        if let creds = ctx[WatchKey.credentials] as? Data, !creds.isEmpty { store?.setCredentials(creds) }
+        let incoming = ctx[WatchKey.timestamp] as? Double ?? Date().timeIntervalSince1970
+        guard incoming >= timestamp else { return }
+        if let creds = ctx[WatchKey.credentials] as? Data { store?.setCredentials(creds) }
         if let raw = ctx[WatchKey.accent] as? String, raw != accent.rawValue {
             accent = AccentTheme.from(raw)
             UserDefaults.standard.set(raw, forKey: AccentTheme.storageKey)
         }
         guard let t = ctx[WatchKey.title] as? String else { return }
+        let previouslyPlaying = isPlaying
+        let priorDevice = reportedDevice
         title = t
         artist = ctx[WatchKey.artist] as? String ?? ""
         isPlaying = ctx[WatchKey.isPlaying] as? Bool ?? false
         duration = ctx[WatchKey.duration] as? Double ?? 0
         elapsedAt = ctx[WatchKey.elapsed] as? Double ?? 0
-        timestamp = ctx[WatchKey.timestamp] as? Double ?? Date().timeIntervalSince1970
+        timestamp = incoming
+        songID = ctx[WatchKey.songID] as? String
+        reportedDevice = (ctx[WatchKey.destination] as? String).flatMap(PlaybackDevice.init(rawValue:)) ?? .phone
+        if let devices = ctx[WatchKey.devices] as? [String] {
+            remoteDevices = devices.compactMap(PlaybackDevice.init(rawValue:))
+        }
+        if isPlaying, !switching, !previouslyPlaying || priorDevice != reportedDevice {
+            if let player = store?.player, player.current != nil { player.clear() }
+            selection = reportedDevice
+        }
         loved = ctx[WatchKey.loved] as? Bool ?? false
         upNext = ctx[WatchKey.upNext] as? [String] ?? []
-        if let data = ctx[WatchKey.artwork] as? Data { artwork = UIImage(data: data) } else if t == "Not Playing" { artwork = nil }
+        artwork = (ctx[WatchKey.artwork] as? Data).flatMap(UIImage.init(data:))
     }
 
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
@@ -334,6 +488,9 @@ final class WatchSession: NSObject, WCSessionDelegate {
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         let reachable = session.isReachable
-        Task { @MainActor in self.reachable = reachable }
+        Task { @MainActor in
+            self.reachable = reachable
+            if reachable { self.send(.requestState) }
+        }
     }
 }

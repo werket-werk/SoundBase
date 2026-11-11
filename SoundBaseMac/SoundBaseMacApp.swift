@@ -59,7 +59,7 @@ struct PlaybackCommands: Commands {
             Divider()
             Button(player.shuffle ? "Turn Off Shuffle" : "Shuffle") { player.toggleShuffle() }
                 .keyboardShortcut("s", modifiers: .command)
-            Button("Repeat: \(["Off", "All", "One"][player.repeatMode.rawValue])") { player.cycleRepeat() }
+            Button(player.repeatMode.title) { player.cycleRepeat() }
                 .keyboardShortcut("r", modifiers: .command)
         }
     }
@@ -70,7 +70,7 @@ struct PlaybackCommands: Commands {
 enum MacSection: Hashable {
     case home, browse, radio, search
     case artists, albums, songs, genres, loved, downloads
-    case playlist(String)
+    case playlists, playlist(String)
 }
 
 struct MacRootView: View {
@@ -108,9 +108,19 @@ struct MacMainView: View {
                     .macRoutes()
             }
         }
+        .libraryEditor(model: model)
         .searchable(text: $search, placement: .sidebar, prompt: "Search")
-        .onChange(of: search) { _, new in if !new.isEmpty { section = .search } }
+        .onChange(of: search) { _, new in
+            if section == .search { router.homePath = [] }
+            if !new.isEmpty { section = .search }
+        }
         .onChange(of: section) { _, _ in router.homePath = [] }
+        .accessibilityHidden(router.showNowPlaying)
+        .overlay {
+            if router.showNowPlaying {
+                MacNowPlayingView()
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             MacPlayerBar(inspector: $inspector)
         }
@@ -153,9 +163,19 @@ struct MacMainView: View {
                 Label("Genres", systemImage: "guitars").tag(MacSection.genres)
                 Label("Favourites", systemImage: "star").tag(MacSection.loved)
                 Label("Downloaded", systemImage: "arrow.down.circle").tag(MacSection.downloads)
+                ForEach(model.pinnedPlaylistIDs, id: \.self) { id in
+                    if let name = model.playlists.first(where: { $0.id == id })?.name
+                        ?? model.downloads.playlistIndex.playlists[id]?.name {
+                        Label(name, systemImage: "pin.fill").tag(MacSection.playlist(id))
+                        .contextMenu {
+                            Button("Unpin") { model.togglePlaylistPin(id) }
+                        }
+                    }
+                }
             }
             Section("Playlists") {
-                ForEach(model.playlists) { playlist in
+                Label("All Playlists", systemImage: "music.note.list").tag(MacSection.playlists)
+                ForEach(model.playlists.filter { !model.pinnedPlaylistIDs.contains($0.id) }) { playlist in
                     Label(playlist.name, systemImage: "music.note.list").tag(MacSection.playlist(playlist.id))
                         .contextMenu {
                             Button("Play") { Task { await playPlaylist(playlist.id, shuffled: false) } }
@@ -183,13 +203,16 @@ struct MacMainView: View {
         case .genres: MacGenresView()
         case .loved: MacLovedView()
         case .downloads: MacDownloadsView()
-        case .playlist(let id): MacPlaylistView(id: id)
+        case .playlists: MacPlaylistsView()
+        case .playlist(let id):
+            MacPlaylistView(id: id) { section = .playlists }
+                .id(id)
         }
     }
 
     private func playPlaylist(_ id: String, shuffled: Bool) async {
         guard let songs = try? await model.client?.playlist(id)?.entry else { return }
-        model.player.play(songs, shuffled: shuffled)
+        model.playFromLibrary(songs, shuffled: shuffled)
     }
 
     private func newPlaylist() {
@@ -206,6 +229,42 @@ struct MacMainView: View {
             try? await model.client?.createPlaylist(name: name, songIds: [])
             await model.refreshPlaylists()
         }
+    }
+}
+
+struct MacNowPlayingView: View {
+    @Environment(Player.self) private var player
+    @Environment(Router.self) private var router
+
+    var body: some View {
+        GeometryReader { proxy in
+            let artworkSize = max(80, min(420, proxy.size.width - 80, proxy.size.height - 170))
+            VStack(spacing: 14) {
+                HStack {
+                    Button { router.showNowPlaying = false } label: {
+                        Label("Back to Library", systemImage: "chevron.down")
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    Spacer()
+                    Text("Now Playing").font(.headline)
+                }
+                Spacer(minLength: 0)
+                MacArtwork(id: player.current?.coverArt, size: 1000, corner: 14)
+                    .frame(width: artworkSize, height: artworkSize)
+                    .shadow(color: .black.opacity(0.25), radius: 20, y: 8)
+                VStack(spacing: 4) {
+                    Text(player.current?.title ?? "Not Playing").font(.title.bold())
+                    Text(player.current?.artist ?? "").font(.title3).foregroundStyle(.secondary)
+                }
+                .lineLimit(1)
+                PlaybackIssueControls()
+                Spacer(minLength: 0)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .environment(\.colorScheme, .dark)
+        .background { NowPlayingBackground(image: player.artwork) }
     }
 }
 
@@ -230,18 +289,20 @@ struct MacPlayerBar: View {
                         .contentTransition(.symbolEffect(.replace))
                 }
                 Button { player.next() } label: { Image(systemName: "forward.fill").font(.title3) }
-                Button { player.cycleRepeat() } label: {
-                    Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
-                }
-                .foregroundStyle(player.repeatMode != .off ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                RepeatModeMenu().menuStyle(.borderlessButton).fixedSize()
             }
             .buttonStyle(.plain)
             .disabled(player.current == nil)
 
             // "LCD": artwork, title, scrubber
             HStack(spacing: 10) {
-                MacArtwork(id: player.current?.coverArt, size: 120, corner: 4)
-                    .frame(width: 44, height: 44)
+                Button { router.showNowPlaying.toggle() } label: {
+                    MacArtwork(id: player.current?.coverArt, size: 120, corner: 4)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .disabled(player.current == nil)
+                .help(router.showNowPlaying ? "Minimise Now Playing" : "Open Now Playing")
                 VStack(spacing: 3) {
                     if let song = player.current {
                         Text(song.title).font(.callout.weight(.medium)).lineLimit(1)

@@ -58,7 +58,12 @@ struct ShelfHeader: View {
                 }
                 HStack(spacing: 4) {
                     Text(title).font(.title2.bold())
-                    if route != nil { Image(systemName: "chevron.right").font(.title3.bold()).foregroundStyle(.secondary) }
+                    if case .searchResults? = route {
+                        Spacer()
+                        Text("See All").font(.subheadline).foregroundStyle(.tint)
+                    } else if route != nil {
+                        Image(systemName: "chevron.right").font(.title3.bold()).foregroundStyle(.secondary)
+                    }
                 }
             }
             .foregroundStyle(.primary)
@@ -72,18 +77,32 @@ struct ShelfHeader: View {
 struct AlbumCard: View {
     let album: Album
     var width: CGFloat = 160
+    var listRow = false
     @Environment(Router.self) private var router
     @Environment(AppModel.self) private var model
 
     var body: some View {
         Button { router.go(.album(album.id)) } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Artwork(id: album.coverArt, size: 400)
-                    .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
-                Text(album.name).font(.subheadline).lineLimit(1).foregroundStyle(.primary)
-                Text(album.artist ?? "").font(.subheadline).lineLimit(1).foregroundStyle(.secondary)
+            if listRow {
+                HStack(spacing: 12) {
+                    Artwork(id: album.coverArt, size: 120, corner: 6).frame(width: 48, height: 48)
+                    LibraryItemTitle(title: album.name, subtitle: album.artist)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+                .contentShape(Rectangle())
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Artwork(id: album.coverArt, size: 400)
+                        .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+                    Text(album.name).font(.subheadline).lineLimit(1).foregroundStyle(.primary)
+                    Text(album.artist ?? "").font(.subheadline).lineLimit(1).foregroundStyle(.secondary)
+                }
+                .frame(width: width)
             }
-            .frame(width: width)
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -92,8 +111,8 @@ struct AlbumCard: View {
             Button { Task { if let s = try? await model.client?.album(album.id)?.song { model.player.playNext(s) } } } label: {
                 Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
             }
-            Button { Task { if let s = try? await model.client?.album(album.id)?.song { model.player.playLast(s) } } } label: {
-                Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward")
+            Button { Task { if let s = try? await model.client?.album(album.id)?.song { model.player.addToQueue(s) } } } label: {
+                Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
             }
             Button { model.toggleLove(album.id, kind: .album) } label: {
                 Label(model.isLoved(album.id) ? "Unfavourite" : "Favourite", systemImage: model.isLoved(album.id) ? "star.slash" : "star")
@@ -150,11 +169,12 @@ struct ArtistShelf: View {
     let title: String
     var subtitle: String? = nil
     let artists: [Artist]
+    var route: Route? = nil
 
     var body: some View {
         if !artists.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                ShelfHeader(title: title, subtitle: subtitle)
+                ShelfHeader(title: title, subtitle: subtitle, route: route)
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 16) {
                         ForEach(artists) { ArtistCard(artist: $0) }
@@ -231,7 +251,8 @@ struct SongRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            Menu { SongMenu(song: song) } label: {
+            QueueTrackButton(song: song)
+            Menu { SongMenu(song: song, showLibraryEditor: true) } label: {
                 Image(systemName: "ellipsis")
                     .font(.subheadline)
                     .frame(width: 30, height: 36)
@@ -240,12 +261,13 @@ struct SongRow: View {
             .foregroundStyle(.primary)
         }
         .padding(.vertical, 4)
-        .contextMenu { SongMenu(song: song) }
+        .contextMenu { SongMenu(song: song, showLibraryEditor: true) }
     }
 }
 
 struct SongMenu: View {
     let song: Song
+    var showLibraryEditor = false
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
 
@@ -253,19 +275,30 @@ struct SongMenu: View {
         let downloads = model.downloads
         let player = model.player
         Button { player.playNext([song]) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
-        Button { player.playLast([song]) } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
+        Button { player.addToQueue([song]) } label: { Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") }
+        if showLibraryEditor && !song.isRadio {
+            LibraryEditButton(edit: LibraryEdit(song))
+        }
         Divider()
         Button { router.playlistPickerSongs = [song] } label: { Label("Add to Playlist…", systemImage: "text.badge.plus") }
         Button { model.toggleLove(song.id, kind: .song) } label: {
             Label(model.isLoved(song.id) ? "Unfavourite" : "Favourite", systemImage: model.isLoved(song.id) ? "star.slash" : "star")
         }
-        if downloads.isDownloaded(song.id) {
-            Button(role: .destructive) { downloads.remove(song.id) } label: { Label("Remove Download", systemImage: "trash") }
-        } else {
-            Button { downloads.download([song]) } label: { Label("Download", systemImage: "arrow.down.circle") }
+        if downloads.canRemoveTrack(song.id) {
+            let saved = downloads.isDownloaded(song.id)
+            if !saved && !downloads.inProgress.contains(song.id) {
+                Button { downloads.download([song]) } label: { Label("Retry Download", systemImage: "arrow.clockwise") }
+            }
+            Button(role: .destructive) { downloads.remove(song.id) } label: {
+                Label(saved ? "Remove Track Download" : "Cancel Track Download", systemImage: "trash")
+            }
+        } else if !song.isRadio {
+            Button { downloads.download([song]) } label: {
+                Label(downloads.isDownloaded(song.id) ? "Keep Track Downloaded" : "Download", systemImage: "arrow.down.circle")
+            }
         }
         Divider()
-        Button { Task { await model.playSongStation(song) } } label: { Label("Create Station", systemImage: "dot.radiowaves.left.and.right") }
+        Button { router.go(.generated(.song(song))) } label: { Label("Create Station", systemImage: "dot.radiowaves.left.and.right") }
         if let albumId = song.albumId {
             Button { router.go(.album(albumId)) } label: { Label("Go to Album", systemImage: "square.stack") }
         }

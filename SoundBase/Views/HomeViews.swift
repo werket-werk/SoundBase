@@ -5,6 +5,11 @@ import SwiftUI
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
+    @AppStorage(HomeLayout.recentPlaylistsKey) private var showRecentPlaylists = true
+    @AppStorage(HomeLayout.orderKey) private var sectionOrder = ""
+    @AppStorage(HomeLayout.hiddenSectionsKey) private var hiddenSections = ""
+    @AppStorage(HomeLayout.hiddenMixesKey) private var hiddenMixes = ""
+    @State private var editingHome = false
     @State private var recent: [Album] = []
     @State private var frequent: [Album] = []
     @State private var newest: [Album] = []
@@ -18,15 +23,13 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 30) {
-                mixes
-                AlbumShelf(title: "Recently Played", albums: recent, route: .albums(title: "Recently Played", type: "recent"))
-                if let seed = similarSeed {
-                    ArtistShelf(title: "You Might Also Like", subtitle: "Because you listened to \(seed)", artists: similar)
+                ForEach(visibleSections) { section in
+                    homeSection(section)
                 }
-                AlbumShelf(title: "Recently Added", albums: newest, route: .albums(title: "Recently Added", type: "newest"))
-                AlbumShelf(title: "Most Played", albums: frequent, route: .albums(title: "Most Played", type: "frequent"))
-                AlbumShelf(title: "Favourite Albums", albums: starred, route: .albums(title: "Favourite Albums", type: "starred"))
-                AlbumShelf(title: "Rediscover", subtitle: "From your library", albums: rediscover, route: .albums(title: "Rediscover", type: "random"))
+                if visibleSections.isEmpty {
+                    ContentUnavailableView("Home is empty", systemImage: "rectangle.stack",
+                                           description: Text("Use Edit Home to show sections."))
+                }
                 if !loaded { ProgressView().frame(maxWidth: .infinity).padding(40) }
             }
             .padding(.vertical)
@@ -34,11 +37,67 @@ struct HomeView: View {
         .navigationTitle("Home")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                editHomeButton
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { router.showSettings = true } label: { Image(systemName: "person.crop.circle") }
             }
         }
         .refreshable { await load() }
+        .sheet(isPresented: $editingHome) {
+            NavigationStack {
+                HomeLayoutSettings()
+                    .toolbar { Button("Done") { editingHome = false } }
+            }
+        }
         .task { if !loaded { await load() } }
+    }
+
+    private var visibleSections: [HomeSection] {
+        HomeSection.order(from: sectionOrder).filter {
+            HomeLayout.isVisible($0.id, in: hiddenSections)
+                && ($0 != .recentPlaylists || (showRecentPlaylists && !model.recentPlaylists.isEmpty))
+                && ($0 != .mixes || HomeMix.available.contains(where: mixIsVisible))
+        }
+    }
+
+    private var editHomeButton: some View {
+        Button { editingHome = true } label: {
+            Label("Edit Home", systemImage: "slider.horizontal.3")
+        }
+    }
+
+    @ViewBuilder private func homeSection(_ section: HomeSection) -> some View {
+        switch section {
+        case .recentPlaylists:
+            RecentPlaylistCards(playlists: model.recentPlaylists)
+        case .mixes:
+            mixes
+        case .recent:
+            AlbumShelf(title: "Recently Played", albums: recent, route: .albums(title: "Recently Played", type: "recent"))
+        case .history:
+            NavigationLink(value: Route.history) {
+                Label("Listening History", systemImage: "clock.arrow.circlepath")
+            }
+            .padding(.horizontal)
+        case .similar:
+            if let seed = similarSeed {
+                ArtistShelf(title: "You Might Also Like", subtitle: "Because you listened to \(seed)", artists: similar)
+            }
+        case .newest:
+            AlbumShelf(title: "Recently Added", albums: newest, route: .albums(title: "Recently Added", type: "newest"))
+        case .frequent:
+            AlbumShelf(title: "Most Played", albums: frequent, route: .albums(title: "Most Played", type: "frequent"))
+        case .favourites:
+            AlbumShelf(title: "Favourite Albums", albums: starred, route: .albums(title: "Favourite Albums", type: "starred"))
+        case .rediscover:
+            AlbumShelf(title: "Rediscover", subtitle: "From your library", albums: rediscover, route: .albums(title: "Rediscover", type: "random"))
+        }
+    }
+
+    private func mixIsVisible(_ mix: HomeMix) -> Bool {
+        guard HomeLayout.isVisible(mix.id, in: hiddenMixes) else { return false }
+        return mix != .artistStation || (recent.first?.artistId != nil && recent.first?.artist != nil)
     }
 
     private var mixes: some View {
@@ -46,33 +105,30 @@ struct HomeView: View {
             ShelfHeader(title: "Made For You")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
-                    MixTile(title: "Favourites Mix", subtitle: "Your starred songs", systemImage: "star.fill", colors: Palette.sets[0]) {
-                        Task { await model.playFavouritesMix() }
-                    }
-                    MixTile(title: "Discovery Mix", subtitle: "Deep cuts from your library", systemImage: "sparkles", colors: Palette.sets[1]) {
-                        Task { await model.playDiscoveryMix() }
-                    }
-                    if let seedAlbum = recent.first, let artistId = seedAlbum.artistId, let name = seedAlbum.artist {
-                        MixTile(title: "\(name) Station", subtitle: "Inspired by recent listening", systemImage: "dot.radiowaves.left.and.right", colors: Palette.sets[2]) {
-                            Task { await model.playArtistStation(artistId: artistId, name: name) }
+                    if mixIsVisible(.favourites) {
+                        MixTile(title: "Favourites Mix", subtitle: "Your starred songs", systemImage: "star.fill", colors: Palette.sets[0]) {
+                            model.router.go(.generated(.favourites))
                         }
                     }
-                    MixTile(title: "Heavy Rotation", subtitle: "Your most played", systemImage: "flame.fill", colors: Palette.sets[4]) {
-                        Task { await playHeavyRotation() }
+                    if mixIsVisible(.discovery) {
+                        MixTile(title: "Discovery Mix", subtitle: "Deep cuts from your library", systemImage: "sparkles", colors: Palette.sets[1]) {
+                            model.router.go(.generated(.discovery))
+                        }
+                    }
+                    if mixIsVisible(.artistStation), let seedAlbum = recent.first, let artistId = seedAlbum.artistId, let name = seedAlbum.artist {
+                        MixTile(title: "\(name) Station", subtitle: "Inspired by recent listening", systemImage: "dot.radiowaves.left.and.right", colors: Palette.sets[2]) {
+                            model.router.go(.generated(.artist(id: artistId, name: name)))
+                        }
+                    }
+                    if mixIsVisible(.heavyRotation) {
+                        MixTile(title: "Heavy Rotation", subtitle: "Your most played", systemImage: "flame.fill", colors: Palette.sets[4]) {
+                            router.go(.generated(.heavyRotation))
+                        }
                     }
                 }
                 .padding(.horizontal)
             }
         }
-    }
-
-    private func playHeavyRotation() async {
-        guard let client = model.client else { return }
-        var songs: [Song] = []
-        for album in frequent.prefix(8) {
-            songs += (try? await client.album(album.id))?.song ?? []
-        }
-        model.player.play(songs, shuffled: true)
     }
 
     private func load() async {
@@ -203,11 +259,11 @@ struct RadioView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 30) {
                 VStack(spacing: 14) {
-                    MixTile(title: "Discovery Station", subtitle: "Endless music from your library", systemImage: "dot.radiowaves.left.and.right", colors: Palette.sets[1], width: nil, height: 200) {
-                        Task { await model.playDiscoveryMix() }
+                    MixTile(title: "Discovery Station", subtitle: "A mix from your library", systemImage: "dot.radiowaves.left.and.right", colors: Palette.sets[1], width: nil, height: 200) {
+                        model.router.go(.generated(.discoveryStation))
                     }
                     MixTile(title: "Favourites Station", subtitle: "Starred songs, shuffled", systemImage: "star.fill", colors: Palette.sets[0], width: nil, height: 120) {
-                        Task { await model.playFavouritesMix() }
+                        model.router.go(.generated(.favouritesStation))
                     }
                 }
                 .padding(.horizontal)
@@ -218,7 +274,7 @@ struct RadioView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(spacing: 16) {
                                 ForEach(artists) { artist in
-                                    Button { Task { await model.playArtistStation(artistId: artist.id, name: artist.name) } } label: {
+                                    Button { model.router.go(.generated(.artist(id: artist.id, name: artist.name))) } label: {
                                         VStack(spacing: 6) {
                                             Artwork(id: artist.artworkID, size: 300, circle: true)
                                                 .overlay(alignment: .bottomTrailing) {
@@ -244,7 +300,7 @@ struct RadioView: View {
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                             ForEach(genres.prefix(16)) { genre in
                                 MixTile(title: genre.value, subtitle: "Station", systemImage: "dot.radiowaves.left.and.right", colors: Palette.stable(genre.value), width: nil, height: 100) {
-                                    Task { await model.playGenreStation(genre.value) }
+                                    model.router.go(.generated(.genre(genre.value)))
                                 }
                             }
                         }
@@ -256,7 +312,7 @@ struct RadioView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         ShelfHeader(title: "Internet Radio")
                         ForEach(stations) { station in
-                            Button { model.player.playRadio(station) } label: {
+                            Button { model.router.go(.radio(station)) } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: "antenna.radiowaves.left.and.right")
                                         .frame(width: 46, height: 46)

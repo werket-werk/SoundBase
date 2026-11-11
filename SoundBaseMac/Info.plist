@@ -29,5 +29,11 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_soundbase-play._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>SoundBase uses your local network to connect to your paired iPhone.</string>
 </dict>
 </plist>
