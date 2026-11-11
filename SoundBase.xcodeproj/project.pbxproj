@@ -21,6 +21,7 @@
 		1D6CDD07285EAAAFA5ED8F19 /* GoogleSansBold.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 32CE73DB370EFEEF4DEEFA43 /* GoogleSansBold.bundle */; };
 		20DD4282AC24E139D68AE9BB /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9E16CAA967A4259AAD9E049 /* Platform.swift */; };
 		238578843299DD00E97FC3DE /* PhoneSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B16A81B00050C171C9780A4 /* PhoneSession.swift */; };
+		4813F270C1304DFEB092AF81 /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3447B2362E6B1935547798 /* DownloadManager.swift */; };
 		270D40CEC91243469FFF74B8 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0D17E3F519CD5FDB07659B /* Models.swift */; };
 		2EAF22EEAF553EE3AA2F845C /* MacScreenshotDirector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 966D07D40C8DD1F1732C408E /* MacScreenshotDirector.swift */; };
 		2EB194C428C2CBEB5CEF5166 /* MaterialDialogs.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 7A69B58A196E929771115034 /* MaterialDialogs.bundle */; };
@@ -267,7 +268,6 @@
 			isa = PBXGroup;
 			children = (
 				6FE540BB2A71752E13E61E9A /* CastManager.swift */,
-				AB3447B2362E6B1935547798 /* DownloadManager.swift */,
 				2B16A81B00050C171C9780A4 /* PhoneSession.swift */,
 				12FF48BA8870AEC0FC5B7705 /* Player.swift */,
 			);
@@ -277,6 +277,7 @@
 		D73BF90F5A511CAA3651EC92 /* API */ = {
 			isa = PBXGroup;
 			children = (
+				AB3447B2362E6B1935547798 /* DownloadManager.swift */,
 				CA0D17E3F519CD5FDB07659B /* Models.swift */,
 				FBB56A19DD31AB29706E4867 /* SubsonicClient.swift */,
 			);
@@ -494,6 +495,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4813F270C1304DFEB092AF81 /* DownloadManager.swift in Sources */,
 				270D40CEC91243469FFF74B8 /* Models.swift in Sources */,
 				A40D21FEFE38E092985BA05F /* NearbyPlayback.swift in Sources */,
 				52B6550A067C644A1E52ED70 /* Platform.swift in Sources */,

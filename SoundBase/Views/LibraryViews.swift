@@ -512,12 +512,16 @@ struct DownloadsView: View {
                 let albums = downloads.albums.filter { $0.tracks.contains { $0.matchesDownloadSearch(query) } }
                 if albums.isEmpty { emptyState("Albums") }
                 ForEach(albums, id: \.id) { album in
-                    let tracks = album.tracks
-                    if let first = tracks.first {
-                        NavigationLink {
-                            OfflineTracksView(title: first.album ?? "Unknown Album", tracks: tracks)
-                        } label: {
-                            Label(first.album ?? "Unknown Album", systemImage: "square.stack")
+                    NavigationLink {
+                        OfflineTracksView(title: album.name, tracks: album.tracks, albumID: album.id)
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Label(album.name, systemImage: "square.stack")
+                            if let saved = downloads.savedAlbum(album.id) {
+                                Text(downloads.status(for: saved.tracks)).font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Text("\(album.tracks.count) tracks saved").font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -536,7 +540,8 @@ struct DownloadsView: View {
                 }
             case .songs:
                 let songs = downloads.sortedSongs.filter { $0.matchesDownloadSearch(query) }
-                if songs.isEmpty { emptyState("Songs") }
+                if songs.isEmpty && !downloads.missingStandaloneTracks.contains(where: { $0.matchesDownloadSearch(query) }) { emptyState("Songs") }
+                StandaloneDownloadRows(query: query)
                 OfflineTrackRows(tracks: songs, allowRemoval: true)
             }
 
@@ -551,7 +556,7 @@ struct DownloadsView: View {
         .navigationTitle("Downloaded")
         .searchable(text: $query, prompt: "Find downloaded music")
         .toolbar {
-            if !downloads.songs.isEmpty || !downloads.playlists.isEmpty || !downloads.inProgress.isEmpty {
+            if !downloads.songs.isEmpty || !downloads.playlists.isEmpty || !downloads.inProgress.isEmpty || !downloads.albums.isEmpty || !downloads.missingStandaloneTracks.isEmpty {
                 Button("Remove All", role: .destructive) { confirm = true }
             }
         }
@@ -570,11 +575,14 @@ struct OfflineTracksView: View {
     let title: String
     let tracks: [Song]
     var playlist: DownloadedPlaylist? = nil
+    var albumID: String? = nil
     @Environment(DownloadManager.self) private var downloads
 
     var body: some View {
-        let available = tracks.filter { downloads.isDownloaded($0.id) }
+        let album = albumID.flatMap { id in downloads.albums.first { $0.id == id } }
+        let available = (albumID == nil ? tracks : album?.tracks ?? []).filter { downloads.isDownloaded($0.id) }
         List {
+            if let albumID, let saved = downloads.savedAlbum(albumID) { OfflineAlbumActions(album: saved) }
             if let playlist { OfflinePlaylistActions(playlist: playlist) }
             OfflineTrackRows(tracks: available)
         }
@@ -596,13 +604,14 @@ private struct OfflineTrackRows: View {
             )
             ForEach(Array(tracks.enumerated()), id: \.offset) { index, song in
                 SongRow(song: song) { model.playFromLibrary(tracks, startAt: index) }
+                    .deleteDisabled(!downloads.canRemoveTrack(song.id))
             }
             .onDelete(perform: allowRemoval ? remove : nil)
         }
     }
 
     private func remove(_ offsets: IndexSet) {
-        for offset in offsets { downloads.remove(tracks[offset].id) }
+        downloads.removeTracks(offsets.map { tracks[$0].id })
     }
 }
 

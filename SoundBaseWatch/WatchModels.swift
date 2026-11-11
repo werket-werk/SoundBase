@@ -10,228 +10,48 @@ import UIKit
 @Observable @MainActor
 final class WatchStore {
     private(set) var client: SubsonicClient?
-    private(set) var downloads: [String: Song] = [:]
-    private(set) var inProgress: Set<String> = []
-    private(set) var failedDownloads: Set<String> = []
-    private(set) var playlistIndex = DownloadedPlaylistIndex()
-    var downloadedPlaylists: [DownloadedPlaylist] {
-        playlistIndex.playlists.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-    }
+    let downloads = DownloadManager()
     let player = WatchPlayer()
     var path: [WatchRoute] = []
 
-    @ObservationIgnored private var pending: [Song] = []
-    @ObservationIgnored private var active = 0
-    @ObservationIgnored private let root: URL
-    @ObservationIgnored private var dir: URL
-    @ObservationIgnored private var generation = UUID()
-    @ObservationIgnored private var playlistURL: URL { dir.appendingPathComponent("playlists.json") }
-    @ObservationIgnored private var libraryKey: String?
     @ObservationIgnored private let credsKey = "watchCreds"
 
     init() {
-        root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Music", isDirectory: true)
-        dir = root
-        if let data = UserDefaults.standard.data(forKey: credsKey) { setCredentials(data) }
-        else if let key = UserDefaults.standard.string(forKey: "watchDownloadLibrary"),
-                key.count == 64, key.allSatisfy(\.isHexDigit) {
-            libraryKey = key
-            dir = root.appendingPathComponent(key, isDirectory: true)
-            loadDownloads()
+        if let data = UserDefaults.standard.data(forKey: credsKey) {
+            setCredentials(data)
         } else {
-            loadDownloads()
+            let key = UserDefaults.standard.string(forKey: "watchDownloadLibrary")
+            downloads.openOfflineLibrary(key.flatMap { $0.count == 64 && $0.allSatisfy(\.isHexDigit) ? $0 : nil })
         }
         player.urlProvider = { [weak self] song in self?.playbackURL(for: song) }
         player.artworkProvider = { [weak self] song in await self?.artwork(for: song) }
-    }
-
-    private func loadDownloads() {
-        downloads = [:]
-        let indexURL = dir.appendingPathComponent("index.json")
-        if let data = try? Data(contentsOf: indexURL), let list = try? JSONDecoder().decode([Song].self, from: data) {
-            for song in list where downloads[song.id] == nil {
-                if Self.hasAudioBody(fileURL(song)) { downloads[song.id] = song }
-            }
-        }
-        playlistIndex = .load(from: playlistURL, existingIDs: downloads.keys)
-    }
-
-    private func resetDownloadsInProgress() {
-        generation = UUID()
-        pending = []
-        inProgress = []
-        failedDownloads = []
-        active = 0
     }
 
     func setCredentials(_ data: Data) {
         if data.isEmpty {
             UserDefaults.standard.removeObject(forKey: credsKey)
             client = nil
-            resetDownloadsInProgress()
+            downloads.client = nil
             return
         }
         guard let creds = try? JSONDecoder().decode(ServerCredentials.self, from: data) else { return }
         if client?.creds == creds { return }
+        let oldKey = UserDefaults.standard.string(forKey: "watchDownloadLibrary")
+        if oldKey != creds.libraryKey { player.clear() }
         UserDefaults.standard.set(data, forKey: credsKey)
-        if libraryKey != creds.libraryKey {
-            resetDownloadsInProgress()
-            player.clear()
-            libraryKey = creds.libraryKey
-            UserDefaults.standard.set(libraryKey, forKey: "watchDownloadLibrary")
-            dir = creds.downloadDirectory(in: root)
-            loadDownloads()
-        }
-        client = SubsonicClient(creds: creds)
+        UserDefaults.standard.set(creds.libraryKey, forKey: "watchDownloadLibrary")
+        let client = SubsonicClient(creds: creds)
+        self.client = client
+        downloads.client = client
     }
-
-    var downloadedSongs: [Song] {
-        downloads.values.sorted {
-            ($0.album ?? "", $0.discNumber ?? 0, $0.track ?? 0, $0.title, $0.id) <
-                ($1.album ?? "", $1.discNumber ?? 0, $1.track ?? 0, $1.title, $1.id)
-        }
-    }
-
-    func downloadAlbumKey(for song: Song) -> String { song.offlineAlbumKey }
-
-    func isDownloaded(_ id: String) -> Bool { downloads[id] != nil && FileManager.default.fileExists(atPath: fileURL(id).path) }
 
     func playbackURL(for song: Song) -> URL? {
-        let local = fileURL(song.id)
-        if downloads[song.id] != nil, FileManager.default.fileExists(atPath: local.path) { return local }
-        return song.shouldTranscode(toKbps: Self.quality)
-            ? client?.streamURL(song.id, maxBitRate: Self.quality, format: "aac")
+        if let local = downloads.localURL(for: song.id) { return local }
+        let quality = DownloadManager.watchQuality
+        return song.shouldTranscode(toKbps: quality)
+            ? client?.streamURL(song.id, maxBitRate: quality, format: "aac")
             : client?.streamURL(song.id, maxBitRate: 0, format: "raw")
     }
-
-    /// Watch downloads and streams use AAC 128 kbps (about 1 MB per minute) unless the
-    /// original is already a small lossy file.
-    func download(_ songs: [Song]) {
-        guard client != nil else { return }
-        playlistIndex.standaloneIDs.formUnion(songs.map(\.id))
-        playlistIndex.save(to: playlistURL)
-        enqueue(songs)
-    }
-
-    func downloadPlaylist(_ playlist: DownloadedPlaylist) {
-        guard client != nil, !playlist.tracks.isEmpty else { return }
-        let previous = playlistIndex.playlists.updateValue(playlist, forKey: playlist.id)
-        if let previous { removeUnreferenced(previous.trackIDs.subtracting(playlist.trackIDs)) }
-        persist()
-        enqueue(playlist.tracks)
-    }
-
-    private func enqueue(_ songs: [Song]) {
-        for song in songs where !isDownloaded(song.id) && !inProgress.contains(song.id) {
-            failedDownloads.remove(song.id)
-            inProgress.insert(song.id)
-            pending.append(song)
-        }
-        pump()
-    }
-
-    func remove(_ id: String) {
-        playlistIndex.standaloneIDs.remove(id)
-        removeFile(id)
-        persist()
-    }
-
-    func removePlaylist(_ id: String) {
-        guard let playlist = playlistIndex.playlists.removeValue(forKey: id) else { return }
-        removeUnreferenced(playlist.trackIDs)
-        persist()
-    }
-
-    private func removeUnreferenced(_ ids: Set<String>) {
-        for id in ids where !playlistIndex.retains(id) {
-            removeFile(id)
-            if let queued = pending.firstIndex(where: { $0.id == id }) {
-                pending.remove(at: queued)
-                inProgress.remove(id)
-            }
-        }
-    }
-
-    private func removeFile(_ id: String) {
-        try? FileManager.default.removeItem(at: fileURL(id))
-        downloads.removeValue(forKey: id)
-    }
-
-    func removeAll() {
-        resetDownloadsInProgress()
-        for id in Array(downloads.keys) { removeFile(id) }
-        playlistIndex = DownloadedPlaylistIndex()
-        persist()
-    }
-
-    var totalBytes: Int64 {
-        downloads.keys.reduce(0) { total, id in
-            let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL(id).path)
-            return total + ((attrs?[.size] as? NSNumber)?.int64Value ?? 0)
-        }
-    }
-
-    private func pump() {
-        while active < 2, !pending.isEmpty {
-            let song = pending.removeFirst()
-            active += 1
-            let generation = generation
-            Task {
-                let saved = await fetch(song, generation: generation)
-                guard self.generation == generation else { return }
-                inProgress.remove(song.id)
-                if !saved && playlistIndex.retains(song.id) { failedDownloads.insert(song.id) }
-                active -= 1
-                pump()
-            }
-        }
-    }
-
-    private func fetch(_ song: Song, generation: UUID) async -> Bool {
-        guard self.generation == generation, let client else { return false }
-        var stored = song
-        let url: URL
-        if song.shouldTranscode(toKbps: Self.quality) {
-            url = client.streamURL(song.id, maxBitRate: Self.quality, format: "aac")
-            stored.suffix = "aac"
-            stored.bitRate = Self.quality
-        } else {
-            url = client.downloadURL(song.id)
-        }
-        guard let (tmp, response) = try? await URLSession.shared.download(from: url) else { return false }
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        guard self.generation == generation, playlistIndex.retains(song.id), let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              Self.hasAudioBody(tmp) else { return false }
-        let dest = fileURL(stored)
-        try? FileManager.default.removeItem(at: dest)
-        guard (try? FileManager.default.moveItem(at: tmp, to: dest)) != nil else { return false }
-        downloads[song.id] = stored
-        persist()
-        if let cover = song.coverArt, !FileManager.default.fileExists(atPath: coverURL(cover).path),
-           let (data, _) = try? await URLSession.shared.data(from: client.coverURL(cover, size: 300)) {
-            if self.generation == generation { try? data.write(to: coverURL(cover)) }
-        }
-        return true
-    }
-
-    /// Subsonic and reverse proxies can return a JSON, XML or HTML error with HTTP 200.
-    private static func hasAudioBody(_ url: URL) -> Bool {
-        guard let file = try? FileHandle(forReadingFrom: url) else { return false }
-        defer { try? file.close() }
-        guard let prefix = try? file.read(upToCount: 512), !prefix.isEmpty else { return false }
-        let text = String(decoding: prefix, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{FEFF}")))
-        return !text.hasPrefix("{") && !text.hasPrefix("[") && !text.hasPrefix("<")
-    }
-
-    static let quality = 128
-
-    private func fileURL(_ id: String) -> URL {
-        downloads[id].map(fileURL) ?? dir.appendingPathComponent("\(id).aac")
-    }
-
-    private func coverURL(_ id: String) -> URL { dir.appendingPathComponent("cover-\(id).jpg") }
 
     /// Album artwork for Now Playing: saved with downloads, otherwise fetched from the server.
     func artwork(for song: Song) async -> UIImage? {
@@ -242,20 +62,10 @@ final class WatchStore {
     }
 
     func savedArtwork(for song: Song) -> UIImage? {
-        guard let cover = song.coverArt, let data = try? Data(contentsOf: coverURL(cover)) else { return nil }
+        guard let cover = song.coverArt, let data = try? Data(contentsOf: downloads.artworkURL(cover)) else { return nil }
         return UIImage(data: data)
     }
 
-    private func fileURL(_ song: Song) -> URL {
-        dir.appendingPathComponent("\(song.id).\(song.suffix ?? "aac")")
-    }
-
-    private func persist() {
-        playlistIndex.save(to: playlistURL)
-        if let data = try? JSONEncoder().encode(Array(downloads.values)) {
-            try? data.write(to: dir.appendingPathComponent("index.json"), options: .atomic)
-        }
-    }
 }
 
 // MARK: - On-watch player (Bluetooth headphones / speaker)

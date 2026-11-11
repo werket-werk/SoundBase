@@ -64,7 +64,7 @@ struct WatchRootView: View {
                 case .playlists: PlaylistsWatchView()
                 case .albums: AlbumsWatchView()
                 case .album(let id, let name):
-                    RemoteSongList(title: name) { client in (try? await client.album(id)?.song) ?? [] }
+                    RemoteSongList(title: name, albumID: id) { client in (try? await client.album(id)?.song) ?? [] }
                 }
             }
         }
@@ -271,42 +271,45 @@ struct DownloadedWatchView: View {
     @Environment(WatchStore.self) private var store
 
     var body: some View {
-        let songs = store.downloadedSongs
-        let albums = Dictionary(grouping: songs, by: store.downloadAlbumKey)
+        let downloads = store.downloads
         List {
-            if !store.downloadedPlaylists.isEmpty {
+            if let issue = downloads.downloadIssue {
+                Text(issue).font(.footnote).foregroundStyle(.secondary)
+            }
+            if !downloads.playlists.isEmpty {
                 Section("Playlists") {
-                    ForEach(store.downloadedPlaylists) { playlist in
+                    ForEach(downloads.playlists) { playlist in
                         NavigationLink(playlist.name) {
                             DownloadedSongsView(title: playlist.name, playlist: playlist)
                         }
                     }
                 }
             }
-            if songs.isEmpty && store.downloadedPlaylists.isEmpty {
-                Text("Download playlists or albums to listen without your iPhone.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else if !songs.isEmpty {
-                ForEach(albums.keys.sorted { (albums[$0]?.first?.album ?? "", $0) < (albums[$1]?.first?.album ?? "", $1) }, id: \.self) { key in
-                    if let song = albums[key]?.first {
-                        NavigationLink {
-                            DownloadedSongsView(albumKey: key, title: song.album ?? "Unknown Album")
-                        } label: {
-                            HStack {
-                                DownloadedArtwork(song: song)
-                                VStack(alignment: .leading) {
-                                    Text(song.album ?? "Unknown Album").lineLimit(1)
-                                    if let artist = song.artist {
-                                        Text(artist).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                                    }
-                                }
+            ForEach(downloads.albums) { album in
+                NavigationLink {
+                    DownloadedSongsView(albumKey: album.id, title: album.name)
+                } label: {
+                    HStack {
+                        if let song = album.tracks.first { DownloadedArtwork(song: song) }
+                        VStack(alignment: .leading) {
+                            Text(album.name).lineLimit(1)
+                            if let saved = downloads.savedAlbum(album.id) {
+                                Text(downloads.status(for: saved.tracks)).font(.caption2).foregroundStyle(.secondary)
+                            } else if let artist = album.tracks.first?.artist {
+                                Text(artist).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                             }
                         }
                     }
                 }
+            }
+            if !downloads.songs.isEmpty || !downloads.missingStandaloneTracks.isEmpty {
                 NavigationLink("All Songs") { DownloadedSongsView(title: "All Songs") }
-                Text(ByteCountFormatter.string(fromByteCount: store.totalBytes, countStyle: .file) + " used")
+            }
+            if downloads.albums.isEmpty && downloads.playlists.isEmpty && downloads.missingStandaloneTracks.isEmpty {
+                Text("Download playlists or albums to listen without your iPhone.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            } else {
+                Text(ByteCountFormatter.string(fromByteCount: downloads.totalBytes, countStyle: .file) + " used")
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
@@ -337,22 +340,44 @@ private struct DownloadedSongsView: View {
     @Environment(WatchStore.self) private var store
     @Environment(WatchSession.self) private var session
     @Environment(\.dismiss) private var dismiss
-    @State private var removePlaylist = false
+    @State private var confirmRemove = false
     @State private var showingDevices = false
 
     var body: some View {
-        let songs = playlist?.tracks.filter { store.isDownloaded($0.id) } ?? store.downloadedSongs.filter { song in
-            albumKey.map { store.downloadAlbumKey(for: song) == $0 } ?? true
-        }
+        let downloads = store.downloads
+        let album = albumKey.flatMap { id in downloads.albums.first { $0.id == id } }
+        let savedAlbum = albumKey.flatMap(downloads.savedAlbum)
+        let tracks = playlist?.tracks ?? (albumKey == nil ? downloads.sortedSongs : album?.tracks ?? [])
+        let songs = tracks.filter { downloads.isDownloaded($0.id) }
         List {
-            if let playlist {
-                let missing = playlist.tracks.count - songs.count
-                if missing > 0 {
-                    Text("\(missing) tracks missing").foregroundStyle(.secondary)
-                    Button("Retry Missing") { store.downloadPlaylist(playlist) }
-                        .disabled(!store.inProgress.isDisjoint(with: playlist.trackIDs))
+            if playlist != nil || savedAlbum != nil {
+                Text(downloads.status(for: tracks)).foregroundStyle(.secondary)
+                let failedCount = Set(tracks.map(\.id)).intersection(downloads.failedDownloads).count
+                if failedCount > 0 {
+                    Text(failedCount == 1 ? "1 failed track" : "\(failedCount) failed tracks")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
-                Button("Remove Download", role: .destructive) { removePlaylist = true }
+                if tracks.contains(where: { !downloads.isDownloaded($0.id) }) {
+                    Button("Retry Missing") {
+                        if let playlist { downloads.downloadPlaylist(playlist) }
+                        if let savedAlbum { downloads.downloadAlbum(savedAlbum) }
+                    }
+                    .disabled(!downloads.canRequestDownloads() || tracks.contains { downloads.inProgress.contains($0.id) })
+                }
+                Button("Remove Download", role: .destructive) { confirmRemove = true }
+            }
+            if albumKey == nil && playlist == nil {
+                ForEach(downloads.missingStandaloneTracks) { track in
+                    VStack(alignment: .leading) {
+                        Text(track.title)
+                        if let failure = downloads.failure(for: track.id) {
+                            Text(failure).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Button("Retry") { downloads.download([track]) }
+                            .disabled(!downloads.canRequestDownloads() || downloads.inProgress.contains(track.id))
+                        Button("Cancel Download", role: .destructive) { downloads.remove(track.id) }
+                    }
+                }
             }
             if songs.isEmpty { Text("No downloaded songs").foregroundStyle(.secondary) }
             else {
@@ -360,17 +385,18 @@ private struct DownloadedSongsView: View {
                 WatchDeviceButton(showing: $showingDevices)
                 ForEach(Array(songs.enumerated()), id: \.offset) { index, song in
                     WatchSongRow(song: song) { Task { await session.play(songs, startAt: index) } }
+                        .deleteDisabled(playlist != nil || !downloads.canRemoveTrack(song.id))
                 }
                 .onDelete { offsets in
-                    if playlist == nil { offsets.map { songs[$0].id }.forEach(store.remove) }
+                    if playlist == nil { downloads.removeTracks(offsets.map { songs[$0].id }) }
                 }
-                .deleteDisabled(playlist != nil)
             }
         }
         .navigationTitle(title)
-        .confirmationDialog("Remove this offline playlist?", isPresented: $removePlaylist) {
+        .confirmationDialog("Remove this download?", isPresented: $confirmRemove) {
             Button("Remove Download", role: .destructive) {
-                if let playlist { store.removePlaylist(playlist.id) }
+                if let playlist { downloads.removePlaylist(playlist.id) }
+                if let savedAlbum { downloads.removeAlbum(savedAlbum.id) }
                 dismiss()
             }
         }
@@ -413,7 +439,7 @@ struct AlbumsWatchView: View {
     var body: some View {
         List(albums) { album in
             NavigationLink {
-                RemoteSongList(title: album.name) { client in (try? await client.album(album.id)?.song) ?? [] }
+                RemoteSongList(title: album.name, albumID: album.id) { client in (try? await client.album(album.id)?.song) ?? [] }
             } label: {
                 HStack {
                     WatchArtwork(id: album.coverArt).frame(width: 36, height: 36)
@@ -441,6 +467,7 @@ struct AlbumsWatchView: View {
 struct RemoteSongList: View {
     let title: String
     var playlistID: String? = nil
+    var albumID: String? = nil
     let load: (SubsonicClient) async -> [Song]
     @Environment(WatchStore.self) private var store
     @Environment(WatchSession.self) private var session
@@ -480,27 +507,31 @@ struct RemoteSongList: View {
 
     @ViewBuilder
     private func downloadButton(_ songs: [Song]) -> some View {
-        let done = songs.filter { store.isDownloaded($0.id) }.count
-        let busy = songs.contains { store.inProgress.contains($0.id) }
-        let hasSnapshot = playlistID.map { store.playlistIndex.playlists[$0] != nil } ?? true
+        let downloads = store.downloads
+        let done = songs.filter { downloads.isDownloaded($0.id) }.count
+        let busy = songs.contains { downloads.inProgress.contains($0.id) }
+        let hasSnapshot = playlistID.map { downloads.playlistIndex.playlists[$0] != nil }
+            ?? albumID.map { downloads.savedAlbum("id:\($0)") != nil } ?? true
         Button {
             if let playlistID {
-                store.downloadPlaylist(DownloadedPlaylist(id: playlistID, name: title, tracks: songs))
+                downloads.downloadPlaylist(DownloadedPlaylist(id: playlistID, name: title, tracks: songs))
+            } else if let albumID {
+                downloads.downloadAlbum(id: albumID, name: title, tracks: songs)
             } else {
-                store.download(songs)
+                downloads.download(songs)
             }
         } label: {
             if done == songs.count && hasSnapshot {
                 Label("Downloaded", systemImage: "checkmark.circle.fill")
             } else if busy {
                 Label("Downloading \(done)/\(songs.count)", systemImage: "arrow.down.circle.dotted")
-            } else if songs.contains(where: { store.failedDownloads.contains($0.id) }) {
+            } else if songs.contains(where: { downloads.failedDownloads.contains($0.id) }) {
                 Label("Retry Download", systemImage: "arrow.clockwise")
             } else {
                 Label("Download", systemImage: "arrow.down.circle")
             }
         }
-        .disabled(done == songs.count && hasSnapshot)
+        .disabled(!downloads.canRequestDownloads() || busy || (done == songs.count && hasSnapshot))
     }
 }
 
@@ -549,9 +580,9 @@ struct WatchSongRow: View {
                     Text(song.artist ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                if store.isDownloaded(song.id) {
+                if store.downloads.isDownloaded(song.id) {
                     Image(systemName: "arrow.down.circle.fill").font(.caption2).foregroundStyle(.secondary)
-                } else if store.inProgress.contains(song.id) {
+                } else if store.downloads.inProgress.contains(song.id) {
                     ProgressView().frame(width: 14, height: 14)
                 }
             }

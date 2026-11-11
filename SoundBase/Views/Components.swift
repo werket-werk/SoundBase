@@ -280,10 +280,18 @@ struct SongMenu: View {
         Button { model.toggleLove(song.id, kind: .song) } label: {
             Label(model.isLoved(song.id) ? "Unfavourite" : "Favourite", systemImage: model.isLoved(song.id) ? "star.slash" : "star")
         }
-        if downloads.isDownloaded(song.id) {
-            Button(role: .destructive) { downloads.remove(song.id) } label: { Label("Remove Download", systemImage: "trash") }
-        } else {
-            Button { downloads.download([song]) } label: { Label("Download", systemImage: "arrow.down.circle") }
+        if downloads.canRemoveTrack(song.id) {
+            let saved = downloads.isDownloaded(song.id)
+            if !saved && !downloads.inProgress.contains(song.id) {
+                Button { downloads.download([song]) } label: { Label("Retry Download", systemImage: "arrow.clockwise") }
+            }
+            Button(role: .destructive) { downloads.remove(song.id) } label: {
+                Label(saved ? "Remove Track Download" : "Cancel Track Download", systemImage: "trash")
+            }
+        } else if !song.isRadio {
+            Button { downloads.download([song]) } label: {
+                Label(downloads.isDownloaded(song.id) ? "Keep Track Downloaded" : "Download", systemImage: "arrow.down.circle")
+            }
         }
         Divider()
         Button { router.go(.generated(.song(song))) } label: { Label("Create Station", systemImage: "dot.radiowaves.left.and.right") }

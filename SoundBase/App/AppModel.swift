@@ -596,6 +596,64 @@ enum DownloadCategory: String, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
+struct OfflineAlbumActions: View {
+    let album: OfflineAlbum
+    @Environment(DownloadManager.self) private var downloads
+    @State private var confirmRemove = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(downloads.status(for: album.tracks)).foregroundStyle(.secondary)
+            let failures = album.trackIDs.sorted().compactMap(downloads.failure)
+            if !failures.isEmpty {
+                DisclosureGroup(failures.count == 1 ? "1 failed track" : "\(failures.count) failed tracks") {
+                    ForEach(Array(failures.enumerated()), id: \.offset) { _, failure in
+                        Text(failure).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if album.tracks.contains(where: { !downloads.isDownloaded($0.id) }) {
+                Button("Retry Missing Downloads") { downloads.downloadAlbum(album) }
+                    .disabled(!downloads.canRequestDownloads() || !downloads.inProgress.isDisjoint(with: album.trackIDs))
+            }
+            Button("Remove Album Download", role: .destructive) { confirmRemove = true }
+        }
+        .font(.subheadline)
+        .confirmationDialog("Remove this album download?", isPresented: $confirmRemove) {
+            Button("Remove Album Download", role: .destructive) { downloads.removeAlbum(album.id) }
+        }
+    }
+}
+
+struct StandaloneDownloadRows: View {
+    let query: String
+    @Environment(DownloadManager.self) private var downloads
+
+    var body: some View {
+        ForEach(downloads.missingStandaloneTracks.filter { $0.matchesDownloadSearch(query) }) { track in
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(track.title)
+                    if let failure = downloads.failure(for: track.id) {
+                        Text(failure).font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text(downloads.inProgress.contains(track.id) ? "Downloading" : "Pending")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Menu {
+                    Button("Retry Download") { downloads.download([track]) }
+                        .disabled(!downloads.canRequestDownloads() || downloads.inProgress.contains(track.id))
+                    Button("Cancel Download", role: .destructive) { downloads.remove(track.id) }
+                } label: {
+                    Label("Manage Download", systemImage: "ellipsis.circle").labelStyle(.iconOnly)
+                }
+            }
+        }
+    }
+}
+
 struct OfflinePlaylistActions: View {
     let playlist: DownloadedPlaylist
     var dismissAfterRemoval = true

@@ -556,11 +556,17 @@ struct MacDownloadsView: View {
                 if albums.isEmpty { emptyState("Albums") }
                 else {
                     List(albums) { album in
-                        let name = album.tracks.first?.album ?? "Unknown Album"
                         NavigationLink {
-                            MacOfflineTracksView(title: name, tracks: album.tracks)
+                            MacOfflineTracksView(title: album.name, tracks: album.tracks, albumID: album.id)
                         } label: {
-                            Label(name, systemImage: "square.stack")
+                            VStack(alignment: .leading) {
+                                Label(album.name, systemImage: "square.stack")
+                                if let saved = downloads.savedAlbum(album.id) {
+                                    Text(downloads.status(for: saved.tracks)).font(.caption).foregroundStyle(.secondary)
+                                } else {
+                                    Text("\(album.tracks.count) tracks saved").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }
                 }
@@ -581,12 +587,17 @@ struct MacDownloadsView: View {
                 }
             case .songs:
                 let songs = downloads.sortedSongs.filter { $0.matchesDownloadSearch(query) }
-                if songs.isEmpty { emptyState("Songs") }
-                else {
-                    MacPlayShuffle(songs: songs).padding(.horizontal, 20)
-                    MacSongTable(songs: songs) { offsets in
-                        for offset in offsets { downloads.remove(songs[offset].id) }
+                if downloads.missingStandaloneTracks.contains(where: { $0.matchesDownloadSearch(query) }) {
+                    ScrollView {
+                        VStack(alignment: .leading) { StandaloneDownloadRows(query: query) }
+                            .padding(.horizontal, 20)
                     }
+                    .frame(maxHeight: songs.isEmpty ? .infinity : 160)
+                }
+                if songs.isEmpty && !downloads.missingStandaloneTracks.contains(where: { $0.matchesDownloadSearch(query) }) { emptyState("Songs") }
+                if !songs.isEmpty {
+                    MacPlayShuffle(songs: songs).padding(.horizontal, 20)
+                    MacSongTable(songs: songs)
                 }
             }
         }
@@ -603,12 +614,15 @@ struct MacOfflineTracksView: View {
     let title: String
     let tracks: [Song]
     var playlist: DownloadedPlaylist? = nil
+    var albumID: String? = nil
     @Environment(DownloadManager.self) private var downloads
 
     var body: some View {
-        let available = tracks.filter { downloads.isDownloaded($0.id) }
+        let album = albumID.flatMap { id in downloads.albums.first { $0.id == id } }
+        let available = (albumID == nil ? tracks : album?.tracks ?? []).filter { downloads.isDownloaded($0.id) }
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 10) {
+                if let albumID, let saved = downloads.savedAlbum(albumID) { OfflineAlbumActions(album: saved) }
                 if let playlist { OfflinePlaylistActions(playlist: playlist) }
                 MacPlayShuffle(songs: available)
             }
@@ -723,10 +737,13 @@ struct MacAlbumView: View {
                         }
                         .controlSize(.large)
                         Menu {
-                            MacSongMenu(songs: songs)
+                            MacSongMenu(songs: songs, album: OfflineAlbum(id: "id:\(id)", name: album.name, tracks: songs))
                         } label: { Image(systemName: "ellipsis") }
                         .menuStyle(.borderlessButton)
                         .fixedSize()
+                    }
+                    if let saved = model.downloads.savedAlbum("id:\(id)") {
+                        OfflineAlbumActions(album: saved).padding(.horizontal, 24)
                     }
                     MacSongTable(songs: songs, showNumber: true, showAlbum: false)
                         .frame(height: CGFloat(songs.count) * 28 + 34)
@@ -738,6 +755,9 @@ struct MacAlbumView: View {
                     }
                     .padding(.vertical, 24)
                 }
+            } else if let local = model.downloads.albums.first(where: { $0.id == "id:\(id)" }) {
+                MacOfflineTracksView(title: local.name, tracks: local.tracks, albumID: local.id)
+                    .frame(minHeight: 400)
             } else {
                 ProgressView().padding(80).frame(maxWidth: .infinity)
             }

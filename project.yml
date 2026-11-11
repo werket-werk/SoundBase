@@ -90,7 +90,6 @@ targets:
       - Shared
       - SoundBase/App/AppModel.swift
       - SoundBase/Player/Player.swift
-      - SoundBase/Player/DownloadManager.swift
       - SoundBase/Support/Support.swift
     info:
       path: SoundBaseMac/Info.plist

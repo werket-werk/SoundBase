@@ -254,17 +254,6 @@ struct DownloadedPlaylistIndex: Codable {
             playlist.tracks.contains { $0.id == id }
         }
     }
-
-    static func load(from url: URL, existingIDs: Dictionary<String, Song>.Keys) -> Self {
-        if let data = try? Data(contentsOf: url), let index = try? JSONDecoder().decode(Self.self, from: data) {
-            return index
-        }
-        return Self(standaloneIDs: Set(existingIDs))
-    }
-
-    func save(to url: URL) {
-        if let data = try? JSONEncoder().encode(self) { try? data.write(to: url, options: .atomic) }
-    }
 }
 
 extension Song {

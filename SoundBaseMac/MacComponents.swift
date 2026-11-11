@@ -118,7 +118,15 @@ struct MacAlbumTile: View {
             Button("Add to Queue") { Task { if let s = try? await model.client?.album(album.id)?.song { model.player.addToQueue(s) } } }
             Divider()
             Button(model.isLoved(album.id) ? "Unfavourite" : "Favourite") { model.toggleLove(album.id, kind: .album) }
-            Button("Download") { Task { if let s = try? await model.client?.album(album.id)?.song { model.downloads.download(s) } } }
+            if model.downloads.savedAlbum("id:\(album.id)") == nil {
+                Button("Download Album") {
+                    Task {
+                        guard let client = model.client, let tracks = try? await client.album(album.id)?.song,
+                              model.client?.creds.libraryKey == client.creds.libraryKey else { return }
+                        model.downloads.downloadAlbum(id: album.id, name: album.name, tracks: tracks)
+                    }
+                }
+            }
             if let artistId = album.artistId {
                 Divider()
                 Button("Go to Artist") { router.go(.artist(artistId)) }
@@ -326,6 +334,7 @@ struct MacSongTable: View {
 
 struct MacSongMenu: View {
     let songs: [Song]
+    var album: OfflineAlbum? = nil
     var onDelete: (() -> Void)? = nil
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
@@ -340,10 +349,18 @@ struct MacSongMenu: View {
         if songs.count == 1, let song = songs.first {
             Button(model.isLoved(song.id) ? "Unfavourite" : "Favourite") { model.toggleLove(song.id, kind: .song) }
         }
-        if songs.allSatisfy({ model.downloads.isDownloaded($0.id) }) {
-            Button("Remove Download") { songs.forEach { model.downloads.remove($0.id) } }
+        if let album {
+            if model.downloads.savedAlbum(album.id) == nil && !songs.isEmpty {
+                Button("Download Album") { model.downloads.downloadAlbum(album) }
+            }
         } else {
-            Button("Download") { model.downloads.download(songs) }
+            let tracks = songs.filter { !$0.isRadio }
+            if tracks.contains(where: { model.downloads.canRemoveTrack($0.id) }) {
+                Button("Remove Track Downloads") { model.downloads.removeTracks(tracks.map(\.id)) }
+            }
+            if tracks.contains(where: { !model.downloads.isDownloaded($0.id) || !model.downloads.canRemoveTrack($0.id) }) {
+                Button("Download Tracks") { model.downloads.download(tracks) }
+            }
         }
         if let song = songs.first, songs.count == 1 {
             Divider()

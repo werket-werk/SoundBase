@@ -36,14 +36,14 @@ enum WatchScreenshotDirector {
         case "remote":
             store.path = [.nowPlaying]
         case "album":
-            store.download(Array(songs.prefix(3)))
+            store.downloads.download(Array(songs.prefix(3)))
             try? await Task.sleep(for: .seconds(4))
             store.path = [.album(id: album.id, name: album.name)]
         case "downloaded":
-            store.download(songs)
+            store.downloads.download(songs)
             if let other = try? await client.search("Saltwater", artists: 0, albums: 1, songs: 0).album?.first,
                let more = try? await client.album(other.id)?.song {
-                store.download(more)
+                store.downloads.download(more)
             }
             try? await Task.sleep(for: .seconds(8))
             store.path = [.downloaded]

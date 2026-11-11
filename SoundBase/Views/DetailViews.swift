@@ -42,10 +42,21 @@ struct AlbumView: View {
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
 
-                        if downloaded > 0 {
-                            Label(downloaded == songs.count ? "Downloaded" : "\(downloaded) of \(songs.count) downloaded",
-                                  systemImage: downloaded == songs.count ? "checkmark.circle" : "arrow.down.circle")
-                                .font(.footnote).foregroundStyle(.secondary).padding(.top, 8)
+                        if let saved = model.downloads.savedAlbum("id:\(id)") {
+                            OfflineAlbumActions(album: saved).padding(.top, 8)
+                        } else if !songs.isEmpty {
+                            if downloaded > 0 {
+                                Text("\(downloaded) of \(songs.count) tracks saved")
+                                    .font(.footnote).foregroundStyle(.secondary).padding(.top, 8)
+                            }
+                            Button {
+                                model.downloads.downloadAlbum(id: id, name: album.name, tracks: songs)
+                            } label: {
+                                Label("Download Album", systemImage: "arrow.down.circle")
+                            }
+                            .font(.subheadline)
+                            .disabled(!model.downloads.canRequestDownloads())
+                            .padding(.top, 8)
                         }
                         PlayShuffleButtons(
                             play: { model.playFromLibrary(songs) },
@@ -80,9 +91,8 @@ struct AlbumView: View {
                         .padding(.vertical)
                     }
                 }
-            } else if let local = model.downloads.albums.first(where: { $0.id == "id:\(id)" }),
-                      let first = local.tracks.first {
-                OfflineTracksView(title: first.album ?? "Downloaded Album", tracks: local.tracks)
+            } else if let local = model.downloads.albums.first(where: { $0.id == "id:\(id)" }) {
+                OfflineTracksView(title: local.name, tracks: local.tracks, albumID: local.id)
             } else if loadFailed {
                 ContentUnavailableView {
                     Label("Couldn’t Open Album", systemImage: "exclamationmark.circle")
@@ -102,7 +112,6 @@ struct AlbumView: View {
                     }
                     Menu {
                         let songs = album.song ?? []
-                        Button { model.downloads.download(songs) } label: { Label("Download", systemImage: "arrow.down.circle") }
                         Button { router.playlistPickerSongs = songs } label: { Label("Add to Playlist…", systemImage: "text.badge.plus") }
                         Button { model.player.playNext(songs) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
                         Button { model.player.addToQueue(songs) } label: { Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") }
