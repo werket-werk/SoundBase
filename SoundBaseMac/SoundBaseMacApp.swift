@@ -70,7 +70,7 @@ struct PlaybackCommands: Commands {
 enum MacSection: Hashable {
     case home, browse, radio, search
     case artists, albums, songs, genres, loved, downloads
-    case playlist(String)
+    case playlists, playlist(String)
 }
 
 struct MacRootView: View {
@@ -155,6 +155,7 @@ struct MacMainView: View {
                 Label("Downloaded", systemImage: "arrow.down.circle").tag(MacSection.downloads)
             }
             Section("Playlists") {
+                Label("All Playlists", systemImage: "music.note.list").tag(MacSection.playlists)
                 ForEach(model.playlists) { playlist in
                     Label(playlist.name, systemImage: "music.note.list").tag(MacSection.playlist(playlist.id))
                         .contextMenu {
@@ -183,6 +184,7 @@ struct MacMainView: View {
         case .genres: MacGenresView()
         case .loved: MacLovedView()
         case .downloads: MacDownloadsView()
+        case .playlists: MacPlaylistsView()
         case .playlist(let id): MacPlaylistView(id: id)
         }
     }

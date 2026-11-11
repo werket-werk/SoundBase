@@ -7,6 +7,47 @@ import UIKit
 import AppKit
 #endif
 
+enum LibraryLayout: String, CaseIterable {
+    case grid, list
+
+    var title: String { self == .grid ? "Grid" : "List" }
+    var icon: String { self == .grid ? "square.grid.2x2" : "list.bullet" }
+}
+
+struct LibraryLayoutMenu: View {
+    @Binding var layout: LibraryLayout
+
+    var body: some View {
+        Menu {
+            Picker("View", selection: $layout) {
+                ForEach(LibraryLayout.allCases, id: \.self) { option in
+                    Label(option.title, systemImage: option.icon).tag(option)
+                }
+            }
+        } label: {
+            Label("View Options", systemImage: layout.icon)
+        }
+        .labelStyle(.iconOnly)
+        .accessibilityLabel("View Options")
+        .accessibilityValue(layout.title)
+    }
+}
+
+struct LibraryItemTitle: View {
+    let title: String
+    var subtitle: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).foregroundStyle(.primary)
+            if let subtitle {
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+        .lineLimit(1)
+    }
+}
+
 // MARK: - Keychain-backed credential storage
 
 enum CredentialStore {

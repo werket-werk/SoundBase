@@ -69,33 +69,48 @@ struct MacShelfHeader: View {
 struct MacAlbumTile: View {
     let album: Album
     var width: CGFloat = 170
+    var listRow = false
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
     @State private var hover = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            MacArtwork(id: album.coverArt, size: 400)
-                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
-                .overlay(alignment: .bottomLeading) {
-                    if hover {
-                        Button { Task { await model.playAlbum(album.id) } } label: {
-                            Image(systemName: "play.fill")
-                                .frame(width: 32, height: 32)
-                                .background(.tint, in: Circle())
-                                .foregroundStyle(.white)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(8)
+        Group {
+            if listRow {
+                NavigationLink(value: Route.album(album.id)) {
+                    HStack(spacing: 12) {
+                        MacArtwork(id: album.coverArt, size: 120).frame(width: 44, height: 44)
+                        LibraryItemTitle(title: album.name, subtitle: album.artist)
+                        Spacer(minLength: 0)
                     }
+                    .contentShape(Rectangle())
                 }
-            Text(album.name).font(.callout).lineLimit(1)
-            Text(album.artist ?? "").font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                .buttonStyle(.plain)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    MacArtwork(id: album.coverArt, size: 400)
+                        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                        .overlay(alignment: .bottomLeading) {
+                            if hover {
+                                Button { Task { await model.playAlbum(album.id) } } label: {
+                                    Image(systemName: "play.fill")
+                                        .frame(width: 32, height: 32)
+                                        .background(.tint, in: Circle())
+                                        .foregroundStyle(.white)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(8)
+                            }
+                        }
+                    Text(album.name).font(.callout).lineLimit(1)
+                    Text(album.artist ?? "").font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .frame(width: width)
+                .contentShape(Rectangle())
+                .onHover { hover = $0 }
+                .onTapGesture { router.go(.album(album.id)) }
+            }
         }
-        .frame(width: width)
-        .contentShape(Rectangle())
-        .onHover { hover = $0 }
-        .onTapGesture { router.go(.album(album.id)) }
         .contextMenu {
             Button("Play") { Task { await model.playAlbum(album.id) } }
             Button("Shuffle") { Task { await model.playAlbum(album.id, shuffled: true) } }

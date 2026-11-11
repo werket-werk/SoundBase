@@ -222,17 +222,33 @@ struct MacSearchView: View {
 
 struct MacArtistsView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage("library.artists.layout") private var layout = LibraryLayout.grid
     @State private var artists: [Artist] = []
 
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 20, alignment: .top)], spacing: 24) {
-                ForEach(artists) { MacArtistTile(artist: $0) }
+        Group {
+            if layout == .grid {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 20, alignment: .top)], spacing: 24) {
+                        ForEach(artists) { MacArtistTile(artist: $0) }
+                    }
+                    .padding(24)
+                }
+            } else {
+                List(artists) { artist in
+                    NavigationLink(value: Route.artist(artist.id)) {
+                        HStack(spacing: 12) {
+                            MacArtwork(id: artist.artworkID, size: 120, circle: true)
+                                .frame(width: 44, height: 44)
+                            Text(artist.name)
+                        }
+                    }
+                }
             }
-            .padding(24)
         }
         .overlay { if artists.isEmpty { ProgressView() } }
         .navigationTitle("Artists")
+        .toolbar { LibraryLayoutMenu(layout: $layout) }
         .task {
             guard artists.isEmpty else { return }
             artists = ((try? await model.client?.artists()) ?? []).flatMap { $0.artist ?? [] }
@@ -244,20 +260,35 @@ struct MacAlbumGridView: View {
     let title: String
     let type: String
     @Environment(AppModel.self) private var model
+    @AppStorage("library.albums.layout") private var layout = LibraryLayout.grid
     @State private var albums: [Album] = []
     @State private var sort: String?
     @State private var done = false
     @State private var loading = false
 
     private var current: String { sort ?? type }
+    private var showsViewOptions: Bool { type.hasPrefix("alphabetical") }
 
     var body: some View {
-        ScrollView {
-            MacAlbumGrid(albums: albums) { Task { await loadMore() } }.padding(.vertical, 24)
+        Group {
+            if showsViewOptions && layout == .list {
+                List(albums) { album in
+                    MacAlbumTile(album: album, listRow: true)
+                        .onAppear {
+                            if album.id == albums.last?.id { Task { await loadMore() } }
+                        }
+                }
+            } else {
+                ScrollView {
+                    MacAlbumGrid(albums: albums) { Task { await loadMore() } }
+                        .padding(.vertical, 24)
+                }
+            }
         }
         .navigationTitle(title)
         .toolbar {
-            if type.hasPrefix("alphabetical") {
+            if showsViewOptions {
+                LibraryLayoutMenu(layout: $layout)
                 Picker("Sort", selection: Binding(get: { current }, set: { sort = $0 })) {
                     Text("Title").tag("alphabeticalByName")
                     Text("Artist").tag("alphabeticalByArtist")
@@ -395,12 +426,42 @@ struct MacDownloadsView: View {
 
 struct MacPlaylistsView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage("library.playlists.layout") private var layout = LibraryLayout.list
 
     var body: some View {
-        List(model.playlists) { p in
-            NavigationLink(value: Route.playlist(p.id)) { Label(p.name, systemImage: "music.note.list") }
+        Group {
+            if layout == .grid {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 20, alignment: .top)], spacing: 24) {
+                        ForEach(model.playlists) { playlist in
+                            NavigationLink(value: Route.playlist(playlist.id)) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    MacArtwork(id: playlist.coverArt, size: 400)
+                                    playlistTitle(playlist)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(24)
+                }
+            } else {
+                List(model.playlists) { playlist in
+                    NavigationLink(value: Route.playlist(playlist.id)) {
+                        HStack(spacing: 12) {
+                            MacArtwork(id: playlist.coverArt, size: 120).frame(width: 44, height: 44)
+                            playlistTitle(playlist)
+                        }
+                    }
+                }
+            }
         }
         .navigationTitle("Playlists")
+        .toolbar { LibraryLayoutMenu(layout: $layout) }
+    }
+
+    private func playlistTitle(_ playlist: Playlist) -> some View {
+        LibraryItemTitle(title: playlist.name, subtitle: "\(playlist.songCount ?? 0) songs")
     }
 }
 

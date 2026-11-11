@@ -61,22 +61,39 @@ struct AlbumGridView: View {
     let title: String
     let type: String
     @Environment(AppModel.self) private var model
+    @AppStorage("library.albums.layout") private var layout = LibraryLayout.grid
     @State private var albums: [Album] = []
     @State private var sort: String?
     @State private var done = false
     @State private var loading = false
 
     private var currentType: String { sort ?? type }
+    private var showsViewOptions: Bool { type == "alphabeticalByName" || type == "alphabeticalByArtist" }
 
     var body: some View {
         ScrollView {
-            AlbumGrid(albums: albums) { Task { await loadMore() } }
-                .padding(.vertical)
+            if showsViewOptions && layout == .list {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(albums) { album in
+                        AlbumCard(album: album, listRow: true)
+                            .padding(.vertical, 6)
+                            .onAppear {
+                                if album.id == albums.last?.id { Task { await loadMore() } }
+                            }
+                        Divider().padding(.leading, 60)
+                    }
+                }
+                .padding(.horizontal)
+            } else {
+                AlbumGrid(albums: albums) { Task { await loadMore() } }
+                    .padding(.vertical)
+            }
             if loading { ProgressView().padding() }
         }
         .navigationTitle(title)
         .toolbar {
-            if type == "alphabeticalByName" || type == "alphabeticalByArtist" {
+            if showsViewOptions {
+                LibraryLayoutMenu(layout: $layout)
                 Menu {
                     Picker("Sort", selection: Binding(get: { currentType }, set: { sort = $0 })) {
                         Text("Title").tag("alphabeticalByName")
@@ -113,27 +130,53 @@ struct ArtistsListView: View {
     @State private var index: [ArtistIndexEntry] = []
     @State private var filter = ""
 
+    @AppStorage("library.artists.layout") private var layout = LibraryLayout.list
+
+    private var filteredIndex: [ArtistIndexEntry] {
+        index.compactMap { section in
+            let artists = (section.artist ?? []).filter {
+                filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter)
+            }
+            return artists.isEmpty ? nil : ArtistIndexEntry(name: section.name, artist: artists)
+        }
+    }
+
     var body: some View {
-        List {
-            ForEach(index, id: \.name) { section in
-                let artists = (section.artist ?? []).filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
-                if !artists.isEmpty {
-                    Section(section.name) {
-                        ForEach(artists) { artist in
-                            NavigationLink(value: Route.artist(artist.id)) {
-                                HStack(spacing: 12) {
-                                    Artwork(id: artist.artworkID, size: 120, circle: true).frame(width: 48, height: 48)
-                                    Text(artist.name)
+        Group {
+            if layout == .grid {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110, maximum: 170), spacing: 14, alignment: .top)], spacing: 18) {
+                        ForEach(filteredIndex.flatMap { $0.artist ?? [] }) { artist in
+                            GeometryReader { geometry in
+                                ArtistCard(artist: artist, width: geometry.size.width)
+                            }
+                            .aspectRatio(0.78, contentMode: .fit)
+                        }
+                    }
+                    .padding()
+                }
+            } else {
+                List {
+                    ForEach(filteredIndex, id: \.name) { section in
+                        Section(section.name) {
+                            ForEach(section.artist ?? []) { artist in
+                                NavigationLink(value: Route.artist(artist.id)) {
+                                    HStack(spacing: 12) {
+                                        Artwork(id: artist.artworkID, size: 120, circle: true)
+                                            .frame(width: 48, height: 48)
+                                        Text(artist.name)
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                .listStyle(.plain)
             }
         }
-        .listStyle(.plain)
         .searchable(text: $filter, placement: .navigationBarDrawer, prompt: "Find in Artists")
         .navigationTitle("Artists")
+        .toolbar { LibraryLayoutMenu(layout: $layout) }
         .overlay { if index.isEmpty { ProgressView() } }
         .task { if index.isEmpty { index = (try? await model.client?.artists()) ?? [] } }
     }
@@ -198,34 +241,57 @@ struct GenresView: View {
 
 struct PlaylistsView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage("library.playlists.layout") private var layout = LibraryLayout.list
     @State private var newName = ""
     @State private var showNew = false
 
     var body: some View {
-        List {
-            Button { showNew = true } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "plus")
-                        .font(.title2)
-                        .frame(width: 56, height: 56)
-                        .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 6))
-                    Text("New Playlist…").foregroundStyle(.tint)
+        Group {
+            if layout == .grid {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Button { showNew = true } label: {
+                            Label("New Playlist…", systemImage: "plus")
+                        }
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 135, maximum: 240), spacing: 14, alignment: .top)], spacing: 18) {
+                            ForEach(model.playlists) { playlist in
+                                NavigationLink(value: Route.playlist(playlist.id)) {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Artwork(id: playlist.coverArt, size: 400)
+                                        playlistTitle(playlist)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding()
                 }
-            }
-            ForEach(model.playlists) { playlist in
-                NavigationLink(value: Route.playlist(playlist.id)) {
-                    HStack(spacing: 12) {
-                        Artwork(id: playlist.coverArt, size: 160, corner: 6).frame(width: 56, height: 56)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(playlist.name)
-                            Text("\(playlist.songCount ?? 0) songs").font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                List {
+                    Button { showNew = true } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "plus")
+                                .font(.title2)
+                                .frame(width: 56, height: 56)
+                                .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 6))
+                            Text("New Playlist…").foregroundStyle(.tint)
+                        }
+                    }
+                    ForEach(model.playlists) { playlist in
+                        NavigationLink(value: Route.playlist(playlist.id)) {
+                            HStack(spacing: 12) {
+                                Artwork(id: playlist.coverArt, size: 160, corner: 6).frame(width: 56, height: 56)
+                                playlistTitle(playlist)
+                            }
                         }
                     }
                 }
+                .listStyle(.plain)
             }
         }
-        .listStyle(.plain)
         .navigationTitle("Playlists")
+        .toolbar { LibraryLayoutMenu(layout: $layout) }
         .refreshable { await model.refreshPlaylists() }
         .task { await model.refreshPlaylists() }
         .alert("New Playlist", isPresented: $showNew) {
@@ -240,6 +306,10 @@ struct PlaylistsView: View {
                 }
             }
         }
+    }
+
+    private func playlistTitle(_ playlist: Playlist) -> some View {
+        LibraryItemTitle(title: playlist.name, subtitle: "\(playlist.songCount ?? 0) songs")
     }
 }
 

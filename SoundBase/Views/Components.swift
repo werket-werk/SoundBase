@@ -72,18 +72,32 @@ struct ShelfHeader: View {
 struct AlbumCard: View {
     let album: Album
     var width: CGFloat = 160
+    var listRow = false
     @Environment(Router.self) private var router
     @Environment(AppModel.self) private var model
 
     var body: some View {
         Button { router.go(.album(album.id)) } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Artwork(id: album.coverArt, size: 400)
-                    .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
-                Text(album.name).font(.subheadline).lineLimit(1).foregroundStyle(.primary)
-                Text(album.artist ?? "").font(.subheadline).lineLimit(1).foregroundStyle(.secondary)
+            if listRow {
+                HStack(spacing: 12) {
+                    Artwork(id: album.coverArt, size: 120, corner: 6).frame(width: 48, height: 48)
+                    LibraryItemTitle(title: album.name, subtitle: album.artist)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+                .contentShape(Rectangle())
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Artwork(id: album.coverArt, size: 400)
+                        .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+                    Text(album.name).font(.subheadline).lineLimit(1).foregroundStyle(.primary)
+                    Text(album.artist ?? "").font(.subheadline).lineLimit(1).foregroundStyle(.secondary)
+                }
+                .frame(width: width)
             }
-            .frame(width: width)
         }
         .buttonStyle(.plain)
         .contextMenu {
