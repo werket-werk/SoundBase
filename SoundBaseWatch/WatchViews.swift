@@ -82,6 +82,11 @@ struct WatchNowPlayingView: View {
     @Environment(WatchSession.self) private var session
     @Environment(WatchPlayer.self) private var player
     @Environment(WatchStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var page = Page.playback
+    @State private var showingDevices = false
+
+    private enum Page { case playback, queue }
 
     private var local: Bool { session.device == .watch }
     private var hasTrack: Bool { local ? player.current != nil : session.phoneIsPlayingSomething }
@@ -92,10 +97,10 @@ struct WatchNowPlayingView: View {
     }
 
     var body: some View {
-        TabView {
+        TabView(selection: $page) {
             ScrollView {
                 VStack(spacing: 5) {
-                    WatchDeviceButton()
+                    WatchDeviceButton(showing: $showingDevices)
                         .buttonStyle(.plain)
                         .font(.caption2)
 
@@ -103,6 +108,17 @@ struct WatchNowPlayingView: View {
                         .frame(width: 74, height: 74)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .frame(maxWidth: .infinity)
+                        .overlay(alignment: .leading) {
+                            if controlsEnabled && session.device != .mac {
+                                CrownVolumeControl(
+                                    origin: local ? .local : .companion,
+                                    focused: page == .playback && scenePhase == .active && !showingDevices
+                                )
+                                .id(session.device)
+                                .frame(width: 44, height: 44)
+                                .accessibilityLabel("Volume")
+                            }
+                        }
                         .overlay(alignment: .trailing) {
                             let loved = local ? session.localLoved : session.loved
                             transport(loved ? "Remove Favourite" : "Add Favourite",
@@ -147,6 +163,7 @@ struct WatchNowPlayingView: View {
                 .padding(.horizontal, 4)
             }
             .containerBackground(session.accent.color.gradient.opacity(0.38), for: .tabView)
+            .tag(Page.playback)
 
             List {
                 Section("Up Next") {
@@ -159,6 +176,7 @@ struct WatchNowPlayingView: View {
                     }
                 }
             }
+            .tag(Page.queue)
         }
         .tabViewStyle(.verticalPage)
         .task(id: player.current?.id) { await session.refreshLocalFavourite() }
@@ -189,9 +207,38 @@ struct WatchNowPlayingView: View {
     }
 }
 
+private struct CrownVolumeControl: WKInterfaceObjectRepresentable {
+    let origin: WKInterfaceVolumeControl.Origin
+    let focused: Bool
+
+    final class Coordinator {
+        var focused = false
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeWKInterfaceObject(context: Context) -> WKInterfaceVolumeControl {
+        WKInterfaceVolumeControl(origin: origin)
+    }
+
+    func updateWKInterfaceObject(_ control: WKInterfaceVolumeControl, context: Context) {
+        guard context.coordinator.focused != focused else { return }
+        context.coordinator.focused = focused
+        if focused {
+            control.focus()
+        } else {
+            control.resignFocus()
+        }
+    }
+
+    static func dismantleWKInterfaceObject(_ control: WKInterfaceVolumeControl, coordinator: Coordinator) {
+        if coordinator.focused { control.resignFocus() }
+    }
+}
+
 private struct WatchDeviceButton: View {
     @Environment(WatchSession.self) private var session
-    @State private var showing = false
+    @Binding var showing: Bool
 
     var body: some View {
         Button { showing = true } label: {
@@ -227,11 +274,20 @@ struct DownloadedWatchView: View {
         let songs = store.downloadedSongs
         let albums = Dictionary(grouping: songs, by: store.downloadAlbumKey)
         List {
-            if songs.isEmpty {
+            if !store.downloadedPlaylists.isEmpty {
+                Section("Playlists") {
+                    ForEach(store.downloadedPlaylists) { playlist in
+                        NavigationLink(playlist.name) {
+                            DownloadedSongsView(title: playlist.name, playlist: playlist)
+                        }
+                    }
+                }
+            }
+            if songs.isEmpty && store.downloadedPlaylists.isEmpty {
                 Text("Download playlists or albums to listen without your iPhone.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            } else {
+            } else if !songs.isEmpty {
                 ForEach(albums.keys.sorted { (albums[$0]?.first?.album ?? "", $0) < (albums[$1]?.first?.album ?? "", $1) }, id: \.self) { key in
                     if let song = albums[key]?.first {
                         NavigationLink {
@@ -277,25 +333,47 @@ private struct DownloadedArtwork: View {
 private struct DownloadedSongsView: View {
     var albumKey: String?
     let title: String
+    var playlist: DownloadedPlaylist? = nil
     @Environment(WatchStore.self) private var store
     @Environment(WatchSession.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    @State private var removePlaylist = false
+    @State private var showingDevices = false
 
     var body: some View {
-        let songs = store.downloadedSongs.filter { song in
+        let songs = playlist?.tracks.filter { store.isDownloaded($0.id) } ?? store.downloadedSongs.filter { song in
             albumKey.map { store.downloadAlbumKey(for: song) == $0 } ?? true
         }
         List {
+            if let playlist {
+                let missing = playlist.tracks.count - songs.count
+                if missing > 0 {
+                    Text("\(missing) tracks missing").foregroundStyle(.secondary)
+                    Button("Retry Missing") { store.downloadPlaylist(playlist) }
+                        .disabled(!store.inProgress.isDisjoint(with: playlist.trackIDs))
+                }
+                Button("Remove Download", role: .destructive) { removePlaylist = true }
+            }
             if songs.isEmpty { Text("No downloaded songs").foregroundStyle(.secondary) }
             else {
-                PlayButtons(songs: songs)
-                WatchDeviceButton()
+                PlayButtons(songs: songs, alwaysStartSelection: playlist != nil)
+                WatchDeviceButton(showing: $showingDevices)
                 ForEach(Array(songs.enumerated()), id: \.offset) { index, song in
                     WatchSongRow(song: song) { Task { await session.play(songs, startAt: index) } }
                 }
-                .onDelete { offsets in offsets.map { songs[$0].id }.forEach(store.remove) }
+                .onDelete { offsets in
+                    if playlist == nil { offsets.map { songs[$0].id }.forEach(store.remove) }
+                }
+                .deleteDisabled(playlist != nil)
             }
         }
         .navigationTitle(title)
+        .confirmationDialog("Remove this offline playlist?", isPresented: $removePlaylist) {
+            Button("Remove Download", role: .destructive) {
+                if let playlist { store.removePlaylist(playlist.id) }
+                dismiss()
+            }
+        }
         .alert("Playback", isPresented: Binding(
             get: { session.commandError != nil },
             set: { if !$0 { session.dismissError() } }
@@ -314,7 +392,7 @@ struct PlaylistsWatchView: View {
     var body: some View {
         List(playlists) { playlist in
             NavigationLink {
-                RemoteSongList(title: playlist.name) { client in (try? await client.playlist(playlist.id)?.entry) ?? [] }
+                RemoteSongList(title: playlist.name, playlistID: playlist.id) { client in (try? await client.playlist(playlist.id)?.entry) ?? [] }
             } label: {
                 VStack(alignment: .leading) {
                     Text(playlist.name)
@@ -362,10 +440,12 @@ struct AlbumsWatchView: View {
 /// Songs loaded from the server, with Play, Shuffle and Download for offline use.
 struct RemoteSongList: View {
     let title: String
+    var playlistID: String? = nil
     let load: (SubsonicClient) async -> [Song]
     @Environment(WatchStore.self) private var store
     @Environment(WatchSession.self) private var session
     @State private var songs: [Song]?
+    @State private var showingDevices = false
 
     var body: some View {
         List {
@@ -373,7 +453,7 @@ struct RemoteSongList: View {
                 if songs.isEmpty { Text("No songs").foregroundStyle(.secondary) }
                 else {
                     PlayButtons(songs: songs)
-                    WatchDeviceButton()
+                    WatchDeviceButton(showing: $showingDevices)
                     downloadButton(songs)
                     ForEach(Array(songs.enumerated()), id: \.offset) { i, song in
                         WatchSongRow(song: song) { Task { await session.play(songs, startAt: i) } }
@@ -402,8 +482,15 @@ struct RemoteSongList: View {
     private func downloadButton(_ songs: [Song]) -> some View {
         let done = songs.filter { store.isDownloaded($0.id) }.count
         let busy = songs.contains { store.inProgress.contains($0.id) }
-        Button { store.download(songs) } label: {
-            if done == songs.count {
+        let hasSnapshot = playlistID.map { store.playlistIndex.playlists[$0] != nil } ?? true
+        Button {
+            if let playlistID {
+                store.downloadPlaylist(DownloadedPlaylist(id: playlistID, name: title, tracks: songs))
+            } else {
+                store.download(songs)
+            }
+        } label: {
+            if done == songs.count && hasSnapshot {
                 Label("Downloaded", systemImage: "checkmark.circle.fill")
             } else if busy {
                 Label("Downloading \(done)/\(songs.count)", systemImage: "arrow.down.circle.dotted")
@@ -413,16 +500,17 @@ struct RemoteSongList: View {
                 Label("Download", systemImage: "arrow.down.circle")
             }
         }
-        .disabled(done == songs.count)
+        .disabled(done == songs.count && hasSnapshot)
     }
 }
 
 struct PlayButtons: View {
     let songs: [Song]
+    var alwaysStartSelection = false
     @Environment(WatchSession.self) private var session
 
     var body: some View {
-        let active = songs.contains { $0.id == session.currentSongID }
+        let active = !alwaysStartSelection && songs.contains { $0.id == session.currentSongID }
         let pause = active && session.playing
         HStack(spacing: 8) {
             Button {

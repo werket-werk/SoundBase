@@ -7,7 +7,7 @@ final class CastManager {
     weak var player: Player?
     var isCasting: Bool { false }
     func configure() {}
-    func load(_ songs: [Song], position: Double, autoplay: Bool) {}
+    func load(_ songs: [Song], startingAt: Int, position: Double, autoplay: Bool) {}
     func play() {}
     func pause() {}
     func seek(to seconds: Double) {}

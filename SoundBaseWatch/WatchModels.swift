@@ -13,44 +13,76 @@ final class WatchStore {
     private(set) var downloads: [String: Song] = [:]
     private(set) var inProgress: Set<String> = []
     private(set) var failedDownloads: Set<String> = []
+    private(set) var playlistIndex = DownloadedPlaylistIndex()
+    var downloadedPlaylists: [DownloadedPlaylist] {
+        playlistIndex.playlists.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
     let player = WatchPlayer()
     var path: [WatchRoute] = []
 
     @ObservationIgnored private var pending: [Song] = []
     @ObservationIgnored private var active = 0
-    @ObservationIgnored private let dir: URL
+    @ObservationIgnored private let root: URL
+    @ObservationIgnored private var dir: URL
+    @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var playlistURL: URL { dir.appendingPathComponent("playlists.json") }
+    @ObservationIgnored private var libraryKey: String?
     @ObservationIgnored private let credsKey = "watchCreds"
 
     init() {
-        dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Music", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        if let data = try? Data(contentsOf: dir.appendingPathComponent("index.json")),
-           let list = try? JSONDecoder().decode([Song].self, from: data) {
-            for song in list where downloads[song.id] == nil {
-                let file = fileURL(song)
-                if Self.hasAudioBody(file) {
-                    downloads[song.id] = song
-                } else {
-                    try? FileManager.default.removeItem(at: file)
-                }
-            }
-            if downloads.count != list.count { persist() }
-        }
+        dir = root
         if let data = UserDefaults.standard.data(forKey: credsKey) { setCredentials(data) }
+        else if let key = UserDefaults.standard.string(forKey: "watchDownloadLibrary"),
+                key.count == 64, key.allSatisfy(\.isHexDigit) {
+            libraryKey = key
+            dir = root.appendingPathComponent(key, isDirectory: true)
+            loadDownloads()
+        } else {
+            loadDownloads()
+        }
         player.urlProvider = { [weak self] song in self?.playbackURL(for: song) }
         player.artworkProvider = { [weak self] song in await self?.artwork(for: song) }
+    }
+
+    private func loadDownloads() {
+        downloads = [:]
+        let indexURL = dir.appendingPathComponent("index.json")
+        if let data = try? Data(contentsOf: indexURL), let list = try? JSONDecoder().decode([Song].self, from: data) {
+            for song in list where downloads[song.id] == nil {
+                if Self.hasAudioBody(fileURL(song)) { downloads[song.id] = song }
+            }
+        }
+        playlistIndex = .load(from: playlistURL, existingIDs: downloads.keys)
+    }
+
+    private func resetDownloadsInProgress() {
+        generation = UUID()
+        pending = []
+        inProgress = []
+        failedDownloads = []
+        active = 0
     }
 
     func setCredentials(_ data: Data) {
         if data.isEmpty {
             UserDefaults.standard.removeObject(forKey: credsKey)
             client = nil
+            resetDownloadsInProgress()
             return
         }
         guard let creds = try? JSONDecoder().decode(ServerCredentials.self, from: data) else { return }
         if client?.creds == creds { return }
         UserDefaults.standard.set(data, forKey: credsKey)
+        if libraryKey != creds.libraryKey {
+            resetDownloadsInProgress()
+            player.clear()
+            libraryKey = creds.libraryKey
+            UserDefaults.standard.set(libraryKey, forKey: "watchDownloadLibrary")
+            dir = creds.downloadDirectory(in: root)
+            loadDownloads()
+        }
         client = SubsonicClient(creds: creds)
     }
 
@@ -61,13 +93,9 @@ final class WatchStore {
         }
     }
 
-    func downloadAlbumKey(for song: Song) -> String {
-        if let id = song.albumId, !id.isEmpty { return "id:\(id)" }
-        if let cover = song.coverArt, !cover.isEmpty { return "cover:\(song.album ?? ""):\(cover)" }
-        return "album:\(song.album ?? ""):\(song.artist ?? "")"
-    }
+    func downloadAlbumKey(for song: Song) -> String { song.offlineAlbumKey }
 
-    func isDownloaded(_ id: String) -> Bool { downloads[id] != nil }
+    func isDownloaded(_ id: String) -> Bool { downloads[id] != nil && FileManager.default.fileExists(atPath: fileURL(id).path) }
 
     func playbackURL(for song: Song) -> URL? {
         let local = fileURL(song.id)
@@ -80,7 +108,22 @@ final class WatchStore {
     /// Watch downloads and streams use AAC 128 kbps (about 1 MB per minute) unless the
     /// original is already a small lossy file.
     func download(_ songs: [Song]) {
-        for song in songs where downloads[song.id] == nil && !inProgress.contains(song.id) {
+        guard client != nil else { return }
+        playlistIndex.standaloneIDs.formUnion(songs.map(\.id))
+        playlistIndex.save(to: playlistURL)
+        enqueue(songs)
+    }
+
+    func downloadPlaylist(_ playlist: DownloadedPlaylist) {
+        guard client != nil, !playlist.tracks.isEmpty else { return }
+        let previous = playlistIndex.playlists.updateValue(playlist, forKey: playlist.id)
+        if let previous { removeUnreferenced(previous.trackIDs.subtracting(playlist.trackIDs)) }
+        persist()
+        enqueue(playlist.tracks)
+    }
+
+    private func enqueue(_ songs: [Song]) {
+        for song in songs where !isDownloaded(song.id) && !inProgress.contains(song.id) {
             failedDownloads.remove(song.id)
             inProgress.insert(song.id)
             pending.append(song)
@@ -89,14 +132,36 @@ final class WatchStore {
     }
 
     func remove(_ id: String) {
-        try? FileManager.default.removeItem(at: fileURL(id))
-        downloads.removeValue(forKey: id)
+        playlistIndex.standaloneIDs.remove(id)
+        removeFile(id)
         persist()
     }
 
+    func removePlaylist(_ id: String) {
+        guard let playlist = playlistIndex.playlists.removeValue(forKey: id) else { return }
+        removeUnreferenced(playlist.trackIDs)
+        persist()
+    }
+
+    private func removeUnreferenced(_ ids: Set<String>) {
+        for id in ids where !playlistIndex.retains(id) {
+            removeFile(id)
+            if let queued = pending.firstIndex(where: { $0.id == id }) {
+                pending.remove(at: queued)
+                inProgress.remove(id)
+            }
+        }
+    }
+
+    private func removeFile(_ id: String) {
+        try? FileManager.default.removeItem(at: fileURL(id))
+        downloads.removeValue(forKey: id)
+    }
+
     func removeAll() {
-        for id in downloads.keys { try? FileManager.default.removeItem(at: fileURL(id)) }
-        downloads = [:]
+        resetDownloadsInProgress()
+        for id in Array(downloads.keys) { removeFile(id) }
+        playlistIndex = DownloadedPlaylistIndex()
         persist()
     }
 
@@ -111,19 +176,20 @@ final class WatchStore {
         while active < 2, !pending.isEmpty {
             let song = pending.removeFirst()
             active += 1
+            let generation = generation
             Task {
-                await fetch(song)
+                let saved = await fetch(song, generation: generation)
+                guard self.generation == generation else { return }
+                inProgress.remove(song.id)
+                if !saved && playlistIndex.retains(song.id) { failedDownloads.insert(song.id) }
                 active -= 1
                 pump()
             }
         }
     }
 
-    private func fetch(_ song: Song) async {
-        var saved = false
-        defer { inProgress.remove(song.id) }
-        defer { if !saved { failedDownloads.insert(song.id) } }
-        guard let client else { return }
+    private func fetch(_ song: Song, generation: UUID) async -> Bool {
+        guard self.generation == generation, let client else { return false }
         var stored = song
         let url: URL
         if song.shouldTranscode(toKbps: Self.quality) {
@@ -133,20 +199,20 @@ final class WatchStore {
         } else {
             url = client.downloadURL(song.id)
         }
-        guard let (tmp, response) = try? await URLSession.shared.download(from: url) else { return }
+        guard let (tmp, response) = try? await URLSession.shared.download(from: url) else { return false }
         defer { try? FileManager.default.removeItem(at: tmp) }
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              Self.hasAudioBody(tmp) else { return }
+        guard self.generation == generation, playlistIndex.retains(song.id), let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              Self.hasAudioBody(tmp) else { return false }
         let dest = fileURL(stored)
         try? FileManager.default.removeItem(at: dest)
-        guard (try? FileManager.default.moveItem(at: tmp, to: dest)) != nil else { return }
+        guard (try? FileManager.default.moveItem(at: tmp, to: dest)) != nil else { return false }
         downloads[song.id] = stored
-        saved = true
         persist()
         if let cover = song.coverArt, !FileManager.default.fileExists(atPath: coverURL(cover).path),
            let (data, _) = try? await URLSession.shared.data(from: client.coverURL(cover, size: 300)) {
-            try? data.write(to: coverURL(cover))
+            if self.generation == generation { try? data.write(to: coverURL(cover)) }
         }
+        return true
     }
 
     /// Subsonic and reverse proxies can return a JSON, XML or HTML error with HTTP 200.
@@ -185,6 +251,7 @@ final class WatchStore {
     }
 
     private func persist() {
+        playlistIndex.save(to: playlistURL)
         if let data = try? JSONEncoder().encode(Array(downloads.values)) {
             try? data.write(to: dir.appendingPathComponent("index.json"), options: .atomic)
         }

@@ -8,6 +8,8 @@ struct SearchView: View {
     @State private var results: SearchResult?
     @State private var genres: [Genre] = []
     @State private var searching = false
+    @State private var failed = false
+    @State private var attempt = 0
 
     var body: some View {
         ScrollView {
@@ -15,22 +17,35 @@ struct SearchView: View {
                 GenreGrid(genres: genres, title: "Browse Categories").padding(.vertical)
             } else if let results {
                 resultsView(results)
+            } else if failed {
+                ContentUnavailableView {
+                    Label("Couldn’t Search", systemImage: "exclamationmark.circle")
+                } actions: {
+                    Button("Retry") { attempt += 1 }
+                }
             } else if searching {
                 ProgressView().padding(60)
             }
         }
         .navigationTitle("Search")
         .searchable(text: $query, prompt: "Artists, Albums, Songs")
-        .task(id: query) {
-            let q = query.trimmingCharacters(in: .whitespaces)
-            guard !q.isEmpty else { results = nil; return }
+        .task(id: SearchRequest(query: query, attempt: attempt)) {
+            results = nil
+            failed = false
+            let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !q.isEmpty, let client = model.client else { searching = false; return }
             searching = true
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            let r = try? await model.client?.search(q)
-            guard !Task.isCancelled else { return }
-            results = r
-            searching = false
+            do {
+                try await Task.sleep(for: .milliseconds(300))
+                let response = try await client.search(q)
+                try Task.checkCancellation()
+                results = response
+                searching = false
+            } catch {
+                guard !Task.isCancelled else { return }
+                failed = true
+                searching = false
+            }
         }
         .task { if genres.isEmpty { genres = (try? await model.client?.genres()) ?? [] } }
         .onAppear {
@@ -63,16 +78,57 @@ struct SearchView: View {
             }
             if !songs.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
-                    ShelfHeader(title: "Songs")
-                    ForEach(Array(songs.prefix(8).enumerated()), id: \.element.id) { i, song in
-                        SongRow(song: song) { model.player.play(Array(songs), startAt: i) }.padding(.horizontal)
+                    ShelfHeader(title: "Songs", route: resultRoute(.songs))
+                    ForEach(songs.prefix(8)) { song in
+                        SongRow(song: song) { model.playFromLibrary([song]) }.padding(.horizontal)
                     }
                 }
             }
-            AlbumShelf(title: "Albums", albums: r.album ?? [])
-            ArtistShelf(title: "Artists", artists: Array((r.artist ?? []).dropFirst()))
+            AlbumShelf(title: "Albums", albums: r.album ?? [], route: resultRoute(.albums))
+            ArtistShelf(title: "Artists", artists: r.artist ?? [], route: resultRoute(.artists))
         }
         .padding(.vertical)
+    }
+    private func resultRoute(_ category: SearchCategory) -> Route {
+        .searchResults(query.trimmingCharacters(in: .whitespacesAndNewlines), category)
+    }
+}
+
+struct SearchCategoryView: View {
+    let query: String
+    let category: SearchCategory
+    @Environment(AppModel.self) private var model
+    @State private var page = SearchPage()
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 10) {
+                switch category {
+                case .songs:
+                    ForEach(page.results.song ?? []) { song in
+                        SongRow(song: song) { model.playFromLibrary([song]) }
+                    }
+                case .albums:
+                    AlbumGrid(albums: page.results.album ?? [])
+                case .artists:
+                    ForEach(page.results.artist ?? []) { artist in
+                        NavigationLink(value: Route.artist(artist.id)) {
+                            Label(artist.name, systemImage: "music.mic")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 8)
+                        }
+                    }
+                }
+                SearchPageFooter(page: page, load: load).padding(.vertical)
+            }
+            .padding(.horizontal)
+        }
+        .navigationTitle(category.rawValue)
+        .task { if page.hasMore && page.results.song == nil && page.results.album == nil && page.results.artist == nil { await load() } }
+    }
+
+    private func load() async {
+        await page.load(query: query, category: category, client: model.client)
     }
 }
 
@@ -83,9 +139,10 @@ struct SettingsView: View {
     @Environment(DownloadManager.self) private var downloads
     @Environment(\.dismiss) private var dismiss
     @AppStorage(Pref.maxBitRate) private var maxBitRate = 0
+    @AppStorage(Pref.cellularBitRate) private var cellularBitRate = -1
+    @AppStorage(Pref.wifiOnlyDownloads) private var wifiOnlyDownloads = false
     @AppStorage(Pref.format) private var format = "raw"
     @AppStorage(Pref.replayGain) private var replayGain = 0
-    @AppStorage(Pref.downloadQuality) private var downloadQuality = Pref.defaultDownloadQuality
     @AppStorage(AccentTheme.storageKey) private var accent = AccentTheme.fallback.rawValue
     @AppStorage(AppearanceMode.storageKey) private var appearance = AppearanceMode.system.rawValue
     @AppStorage(NowPlayingStyle.storageKey) private var nowPlayingStyle = NowPlayingStyle.blurredArtwork.rawValue
@@ -112,6 +169,9 @@ struct SettingsView: View {
                 } header: { Text("Appearance") } footer: {
                     Text("The home screen icon changes to match the colour you pick. iOS shows a short confirmation when it changes. The Apple Watch app uses the same colour, but watchOS doesn't allow changing its icon.")
                 }
+                Section("Home") {
+                    NavigationLink("Customize Home") { HomeLayoutSettings() }
+                }
                 Section("Server") {
                     LabeledContent("Address", value: model.credentials?.url.host ?? "")
                     LabeledContent("User", value: model.credentials?.username ?? "")
@@ -136,12 +196,19 @@ struct SettingsView: View {
                     }
                 }
                 Section {
-                    Picker("Streaming Quality", selection: $maxBitRate) {
+                    Picker("Wi-Fi Quality", selection: $maxBitRate) {
                         Text("Original").tag(0)
                         Text("320 kbps").tag(320)
                         Text("256 kbps").tag(256)
                         Text("192 kbps").tag(192)
                         Text("128 kbps").tag(128)
+                    }
+                    Picker("Cellular Quality", selection: $cellularBitRate) {
+                        Text("Same as Wi-Fi").tag(-1)
+                        Text("Original").tag(0)
+                        ForEach([320, 256, 192, 128, 96, 64], id: \.self) { rate in
+                            Text("\(rate) kbps").tag(rate)
+                        }
                     }
                     Picker("Transcode To", selection: $format) {
                         Text("Original Format").tag("raw")
@@ -150,19 +217,14 @@ struct SettingsView: View {
                         Text("MP3").tag("mp3")
                     }
                 } header: { Text("Streaming") } footer: {
-                    Text("AAC transcoding needs Navidrome 0.64 or later.")
+                    Text("Quality changes apply to new streams. A cellular bitrate limit uses MP3 when Original Format is selected. AAC transcoding needs Navidrome 0.64 or later.")
                 }
                 Section {
-                    Picker("Download Quality", selection: $downloadQuality) {
-                        Text("Original").tag(0)
-                        Text("AAC 256 kbps").tag(256)
-                        Text("AAC 192 kbps").tag(192)
-                        Text("AAC 128 kbps").tag(128)
-                    }
+                    DownloadQualitySettings()
+                    Toggle("Download Over Wi-Fi Only", isOn: $wifiOnlyDownloads)
+                    if let issue = downloads.downloadIssue { Text(issue).foregroundStyle(.secondary) }
                 } header: { Text("Downloads") } footer: {
-                    Text(downloadQuality == 0
-                         ? "Songs are stored exactly as they are on your server. Lossless files take about 6–8 MB per minute."
-                         : "Lossless songs are converted to AAC to save space (about \(downloadQuality * 60 / 8 / 1000) MB per minute). MP3 and AAC files already at or below this quality are kept as they are. Applies to new downloads. The Apple Watch always downloads AAC 128 kbps.")
+                    Text("Applies to new downloads. MP3 and Opus require server support. For Opus, use a server profile that sends Opus in MP4. Wi-Fi only prevents new downloads over cellular. Apple Watch uses its existing AAC 128 kbps download policy.")
                 }
                 Section {
                     Picker("Sound Check (ReplayGain)", selection: $replayGain) {

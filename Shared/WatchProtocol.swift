@@ -56,6 +56,8 @@ struct PlaybackTransfer: Codable {
     let index: Int
     let position: Double
     let playing: Bool
+    var manualIndexes: IndexSet? = nil
+    var autoplayStart: Int? = nil
 
     var song: Song? { queue.indices.contains(index) ? queue[index] : nil }
 

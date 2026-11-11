@@ -8,9 +8,130 @@ enum Route: Hashable {
     case album(String)
     case artist(String)
     case playlist(String)
+    case generated(GeneratedPlaylist)
+    case searchResults(String, SearchCategory)
+    case radio(RadioStation)
     case genre(String)
     case albums(title: String, type: String)
-    case artists, songs, playlists, genres, loved, downloads
+    case artists, songs, playlists, genres, loved, downloads, history
+}
+
+enum GeneratedPlaylist: Hashable {
+    case favourites, discovery, favouritesStation, discoveryStation
+    case heavyRotation
+    case genre(String)
+    case artist(id: String, name: String)
+    case song(Song)
+
+    var title: String {
+        switch self {
+        case .favourites: "Favourites Mix"
+        case .discovery: "Discovery Mix"
+        case .favouritesStation: "Favourites Station"
+        case .discoveryStation: "Discovery Station"
+        case .heavyRotation: "Heavy Rotation"
+        case .genre(let name), .artist(_, let name): "\(name) Station"
+        case .song(let song): "\(song.title) Station"
+        }
+    }
+
+    var kind: String {
+        switch self {
+        case .favourites, .discovery, .heavyRotation: "Mix"
+        default: "Station"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .favourites, .favouritesStation: "star.fill"
+        case .discovery: "sparkles"
+        case .heavyRotation: "flame.fill"
+        default: "dot.radiowaves.left.and.right"
+        }
+    }
+
+    func tracks(using client: SubsonicClient) async throws -> [Song] {
+        switch self {
+        case .favourites, .favouritesStation:
+            return (try await client.starred().song ?? []).uniqued().shuffled()
+        case .discovery, .discoveryStation:
+            return try await client.randomSongs(size: 100).uniqued()
+        case .heavyRotation:
+            let albums = try await client.albumList("frequent", size: 8)
+            return try await albumTracks(albums, using: client).shuffled()
+        case .genre(let name):
+            return try await client.songsByGenre(name, count: 300).uniqued().shuffled()
+        case .artist(let id, let name):
+            async let similar = try? client.similarSongs2(artistId: id, count: 60)
+            async let top = try? client.topSongs(artist: name, count: 10)
+            let songs = (await top ?? []) + (await similar ?? [])
+            if !songs.isEmpty { return songs.uniqued().shuffled() }
+            let albums = try await client.artist(id)?.album ?? []
+            return try await albumTracks(Array(albums.prefix(6)), using: client).shuffled()
+        case .song(let seed):
+            var songs = (try? await client.similarSongs(seed.id, count: 60)) ?? []
+            if songs.isEmpty, let artistId = seed.artistId {
+                songs = (try? await client.similarSongs2(artistId: artistId)) ?? []
+            }
+            if songs.isEmpty { songs = (try? await client.randomSongs(size: 60)) ?? [] }
+            return ([seed] + songs).uniqued()
+        }
+    }
+
+    private func albumTracks(_ albums: [Album], using client: SubsonicClient) async throws -> [Song] {
+        try await withThrowingTaskGroup(of: (Int, [Song]).self) { group in
+            for (index, album) in albums.enumerated() {
+                group.addTask { (index, try await client.album(album.id)?.song ?? []) }
+            }
+            var results: [(Int, [Song])] = []
+            for try await result in group { results.append(result) }
+            return results.sorted { $0.0 < $1.0 }.flatMap { $0.1 }.uniqued()
+        }
+    }
+}
+
+struct GeneratedPlaylistContent<Content: View>: View {
+    let playlist: GeneratedPlaylist
+    @ViewBuilder let content: ([Song]) -> Content
+
+    @Environment(AppModel.self) private var model
+    @State private var songs: [Song]?
+    @State private var failure = false
+    @State private var attempt = 0
+
+    var body: some View {
+        Group {
+            if let songs {
+                if songs.isEmpty {
+                    ContentUnavailableView("No Tracks Yet", systemImage: "music.note.list",
+                                           description: Text("There are no matching tracks in your library."))
+                } else {
+                    content(songs)
+                }
+            } else if failure {
+                ContentUnavailableView {
+                    Label("Couldn’t Load Tracks", systemImage: "exclamationmark.circle")
+                } actions: {
+                    Button("Try Again") { attempt += 1 }
+                }
+            } else {
+                ProgressView("Loading tracks…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .navigationTitle(playlist.title)
+        .task(id: attempt) {
+            guard songs == nil, let client = model.client else { return }
+            failure = false
+            do {
+                let tracks = try await playlist.tracks(using: client)
+                if !Task.isCancelled { songs = tracks }
+            } catch {
+                if !Task.isCancelled { failure = true }
+            }
+        }
+    }
 }
 
 @Observable @MainActor
@@ -52,6 +173,7 @@ final class AppModel {
     let router = Router()
     var loved: Set<String> = []
     var playlists: [Playlist] = []
+    private var recentPlaylistIDs: [String] = []
 
     init() {
         CastManager.shared.configure()
@@ -65,9 +187,11 @@ final class AppModel {
 
     private func apply(_ creds: ServerCredentials) {
         credentials = creds
+        recentPlaylistIDs = UserDefaults.standard.stringArray(forKey: recentPlaylistsKey(creds)) ?? []
         let client = SubsonicClient(creds: creds)
         self.client = client
         player.client = client
+        player.queueAccount = playbackAccount
         downloads.client = client
         PhoneSession.shared.push()
         Task {
@@ -96,10 +220,12 @@ final class AppModel {
         credentials = nil
         client = nil
         player.client = nil
+        player.queueAccount = nil
         downloads.client = nil
         loved = []
         playlists = []
-        player.stop()
+        recentPlaylistIDs = []
+        player.stop(clearSavedQueue: false)
     }
 
     // MARK: Favourites
@@ -131,52 +257,46 @@ final class AppModel {
     // MARK: Playlists
 
     func refreshPlaylists() async {
-        guard let client, let list = try? await client.playlists() else { return }
+        guard let client, let list = try? await client.playlists(), self.client === client else { return }
         playlists = list
     }
 
-    // MARK: Mixes & stations
-
-    func playFavouritesMix() async {
-        guard let client, let s = try? await client.starred(), let songs = s.song, !songs.isEmpty else { return }
-        player.play(songs, shuffled: true)
+    var recentPlaylists: [Playlist] {
+        recentPlaylistIDs.compactMap { id in playlists.first { $0.id == id } }
     }
 
-    func playDiscoveryMix() async {
-        guard let client, let songs = try? await client.randomSongs(size: 100), !songs.isEmpty else { return }
+    func recordPlaylistOpen(_ id: String, using client: SubsonicClient) {
+        guard self.client === client, let credentials else { return }
+        recentPlaylistIDs.removeAll { $0 == id }
+        recentPlaylistIDs.insert(id, at: 0)
+        recentPlaylistIDs = Array(recentPlaylistIDs.prefix(8))
+        UserDefaults.standard.set(recentPlaylistIDs, forKey: recentPlaylistsKey(credentials))
+    }
+
+    private func recentPlaylistsKey(_ credentials: ServerCredentials) -> String {
+        "recentPlaylistIDs.\(credentials.libraryKey)"
+    }
+
+    // MARK: Playback started from the library
+
+    func playFromLibrary(_ songs: [Song], startAt: Int = 0, shuffled: Bool = false) {
+        guard !songs.isEmpty else { return }
+        player.play(songs, startAt: startAt, shuffled: shuffled)
+        router.showNowPlaying = true
+    }
+
+    private func playRemoteMix(_ playlist: GeneratedPlaylist) async {
+        guard let client, let songs = try? await playlist.tracks(using: client) else { return }
         player.play(songs)
     }
 
-    func playGenreStation(_ genre: String) async {
-        guard let client, let songs = try? await client.songsByGenre(genre, count: 300), !songs.isEmpty else { return }
-        player.play(songs, shuffled: true)
-    }
-
-    func playArtistStation(artistId: String, name: String) async {
-        guard let client else { return }
-        async let similar = (try? await client.similarSongs2(artistId: artistId, count: 60)) ?? []
-        async let top = (try? await client.topSongs(artist: name, count: 10)) ?? []
-        var songs = await top + similar
-        if songs.isEmpty, let detail = try? await client.artist(artistId) {
-            for album in (detail.album ?? []).prefix(6) {
-                songs += (try? await client.album(album.id))?.song ?? []
-            }
-        }
-        guard !songs.isEmpty else { return }
-        player.play(songs.uniqued(), shuffled: true)
-    }
-
-    func playSongStation(_ seed: Song) async {
-        guard let client else { return }
-        var songs = (try? await client.similarSongs(seed.id, count: 60)) ?? []
-        if songs.isEmpty, let artistId = seed.artistId { songs = (try? await client.similarSongs2(artistId: artistId)) ?? [] }
-        if songs.isEmpty { songs = (try? await client.randomSongs(size: 60)) ?? [] }
-        player.play([seed] + songs.filter { $0.id != seed.id }.uniqued())
+    func playRadio(_ station: RadioStation) {
+        if player.playRadio(station) { router.showNowPlaying = true }
     }
 
     func playAlbum(_ id: String, shuffled: Bool = false) async {
-        guard let client, let songs = try? await client.album(id)?.song, !songs.isEmpty else { return }
-        player.play(songs, shuffled: shuffled)
+        guard let client, let songs = try? await client.album(id)?.song else { return }
+        playFromLibrary(songs, shuffled: shuffled)
     }
 }
 
@@ -220,10 +340,285 @@ extension AppModel {
         case .next: player.next()
         case .previous: player.previous()
         case .love: toggleLoveCurrent()
-        case .shuffleFavourites: Task { await playFavouritesMix() }
-        case .shuffleAll: Task { await playDiscoveryMix() }
+        case .shuffleFavourites: Task { await playRemoteMix(.favourites) }
+        case .shuffleAll: Task { await playRemoteMix(.discovery) }
         case .jump: if let index { player.jump(to: player.index + 1 + index) }
         default: break
+        }
+    }
+}
+
+struct LiveRadioView: View {
+    let station: RadioStation
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "antenna.radiowaves.left.and.right")
+                .font(.system(size: 56))
+                .foregroundStyle(.tint)
+            Text(station.name).font(.largeTitle.bold())
+            Text("Live Internet Radio").foregroundStyle(.secondary)
+            Button { model.playRadio(station) } label: {
+                Label("Listen Live", systemImage: "play.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle(station.name)
+    }
+}
+
+struct QueueTrackButton: View {
+    let song: Song
+    @Environment(Player.self) private var player
+    @State private var added = false
+
+    var body: some View {
+        Button {
+            player.addToQueue([song])
+            added = true
+        } label: {
+            Image(systemName: added ? "checkmark" : "text.badge.plus")
+                .foregroundStyle(added ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .contentTransition(.symbolEffect(.replace))
+                #if os(iOS)
+                .frame(width: 44, height: 44)
+                #else
+                .frame(width: 28, height: 22)
+                #endif
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(added)
+        .accessibilityLabel(added ? "Added to queue" : "Add \(song.title) to queue")
+        .help("Add to Queue")
+        .task(id: added) {
+            guard added else { return }
+            do {
+                try await Task.sleep(for: .seconds(1.2))
+                added = false
+            } catch {}
+        }
+        .onDisappear { added = false }
+    }
+}
+
+struct RepeatModeMenu: View {
+    @Environment(Player.self) private var player
+
+    var body: some View {
+        Menu {
+            ForEach(RepeatMode.allCases, id: \.self) { mode in
+                Button { player.setRepeatMode(mode) } label: {
+                    if mode == player.repeatMode {
+                        Label(mode.title, systemImage: "checkmark")
+                    } else {
+                        Text(mode.title)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: player.repeatMode.icon)
+                .foregroundStyle(player.repeatMode == .off ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
+                #if os(iOS)
+                .frame(width: 44, height: 44)
+                #endif
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Repeat")
+        .accessibilityValue(player.repeatMode.title)
+        .help(player.repeatMode.title)
+        .disabled(player.current == nil || player.current?.isRadio == true)
+    }
+}
+
+struct SearchRequest: Hashable {
+    let query: String
+    let attempt: Int
+}
+
+enum SearchCategory: String, Hashable {
+    case songs = "Songs"
+    case albums = "Albums"
+    case artists = "Artists"
+}
+
+@Observable @MainActor
+final class SearchPage {
+    private(set) var results = SearchResult()
+    private(set) var loading = false
+    private(set) var failed = false
+    private(set) var hasMore = true
+    private var offset = 0
+
+    func load(query: String, category: SearchCategory, client: SubsonicClient?) async {
+        guard !loading, hasMore, let client else { return }
+        loading = true
+        failed = false
+        defer { loading = false }
+        let count = 25
+        do {
+            let page = try await client.search(
+                query, artists: category == .artists ? count : 0,
+                albums: category == .albums ? count : 0, songs: category == .songs ? count : 0,
+                artistOffset: category == .artists ? offset : 0,
+                albumOffset: category == .albums ? offset : 0,
+                songOffset: category == .songs ? offset : 0
+            )
+            try Task.checkCancellation()
+            switch category {
+            case .songs: results.song = merge(results.song, page.song, limit: count)
+            case .albums: results.album = merge(results.album, page.album, limit: count)
+            case .artists: results.artist = merge(results.artist, page.artist, limit: count)
+            }
+        } catch {
+            if !Task.isCancelled { failed = true }
+        }
+    }
+
+    private func merge<T: Identifiable>(_ existing: [T]?, _ page: [T]?, limit: Int) -> [T] {
+        let existing = existing ?? []
+        let page = page ?? []
+        var seen = Set(existing.map(\.id))
+        let additions = page.filter { seen.insert($0.id).inserted }
+        offset += page.count
+        hasMore = page.count >= limit && !additions.isEmpty
+        return existing + additions
+    }
+}
+
+struct SearchPageFooter: View {
+    let page: SearchPage
+    let load: () async -> Void
+
+    var body: some View {
+        if page.loading {
+            ProgressView().frame(maxWidth: .infinity)
+        } else if page.failed {
+            VStack(spacing: 8) {
+                Text("Couldn’t load results").foregroundStyle(.secondary)
+                Button("Retry") { Task { await load() } }
+            }
+            .frame(maxWidth: .infinity)
+        } else if page.hasMore {
+            Button("Load More") { Task { await load() } }.frame(maxWidth: .infinity)
+        } else if (page.results.song ?? []).isEmpty && (page.results.album ?? []).isEmpty
+                    && (page.results.artist ?? []).isEmpty {
+            ContentUnavailableView("No Results", systemImage: "magnifyingglass")
+        }
+    }
+}
+
+struct SaveMixButton: View {
+    let title: String
+    let songs: [Song]
+    @Environment(AppModel.self) private var model
+    @State private var name = ""
+    @State private var naming = false
+    @State private var saving = false
+    @State private var result: String?
+    @State private var succeeded = false
+
+    var body: some View {
+        Button {
+            name = title
+            naming = true
+        } label: {
+            if saving {
+                ProgressView()
+            } else {
+                Label("Save as Playlist…", systemImage: "text.badge.plus")
+            }
+        }
+        .disabled(saving)
+        .alert("Save as Playlist", isPresented: $naming) {
+            TextField("Playlist Name", text: $name)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty, let client = model.client else { return }
+                saving = true
+                Task {
+                    defer { saving = false }
+                    do {
+                        try await client.createPlaylist(name: name, songIds: songs.map(\.id))
+                        await model.refreshPlaylists()
+                        succeeded = true
+                        result = "“\(name)” is in your Navidrome playlists."
+                    } catch {
+                        succeeded = false
+                        result = error.localizedDescription
+                    }
+                }
+            }
+            .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .alert(succeeded ? "Playlist Saved" : "Couldn’t Save Playlist", isPresented: Binding(
+            get: { result != nil }, set: { if !$0 { result = nil } }
+        )) {
+            Button("OK", role: .cancel) { result = nil }
+        } message: {
+            Text(result ?? "")
+        }
+    }
+}
+
+enum DownloadCategory: String, CaseIterable, Identifiable {
+    case albums = "Albums"
+    case playlists = "Playlists"
+    case songs = "Songs"
+
+    var id: Self { self }
+}
+
+struct OfflinePlaylistActions: View {
+    let playlist: DownloadedPlaylist
+    @Environment(DownloadManager.self) private var downloads
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmRemove = false
+
+    var body: some View {
+        let available = playlist.tracks.filter { downloads.isDownloaded($0.id) }.count
+        let downloading = !downloads.inProgress.isDisjoint(with: playlist.trackIDs)
+        VStack(alignment: .leading, spacing: 8) {
+            if downloading {
+                Label("Downloading \(available) of \(playlist.tracks.count) tracks", systemImage: "arrow.down.circle.dotted")
+            } else if available < playlist.tracks.count {
+                Text("\(playlist.tracks.count - available) tracks missing")
+                Button("Retry Missing Downloads") { downloads.downloadPlaylist(playlist) }
+            } else {
+                Label("Ready to Play Offline", systemImage: "checkmark.circle")
+            }
+            Button("Remove Playlist Download", role: .destructive) { confirmRemove = true }
+        }
+        .font(.subheadline)
+        .confirmationDialog("Remove this offline playlist?", isPresented: $confirmRemove) {
+            Button("Remove Download", role: .destructive) {
+                downloads.removePlaylist(playlist.id)
+                dismiss()
+            }
+        }
+    }
+}
+
+struct PlaybackIssueControls: View {
+    @Environment(Player.self) private var player
+
+    var body: some View {
+        if let issue = player.playbackIssue {
+            HStack(spacing: 10) {
+                Label(issue, systemImage: "exclamationmark.circle")
+                Spacer(minLength: 4)
+                Button("Retry") { player.retryPlayback() }
+                    .buttonStyle(.bordered)
+            }
+            .font(.footnote)
+            .padding(10)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
         }
     }
 }

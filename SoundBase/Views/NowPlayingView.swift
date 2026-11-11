@@ -57,11 +57,21 @@ struct NowPlayingView: View {
         ZStack {
             NowPlayingBackground(image: player.artwork)
             VStack(spacing: 0) {
-                Capsule()
-                    .fill(.white.opacity(0.45))
-                    .frame(width: 38, height: 5)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.headline)
+                            .frame(width: 44, height: 44)
+                            .background(.white.opacity(0.12), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Minimise Now Playing")
+                    Spacer()
+                    Text("Now Playing").font(.headline)
+                    Spacer()
+                    Color.clear.frame(width: 44, height: 44)
+                }
+                .padding(.top, 4)
                 if let song = player.current {
                     if panel == .none {
                         Spacer(minLength: 12)
@@ -79,6 +89,7 @@ struct NowPlayingView: View {
                         }
                         .frame(maxHeight: .infinity)
                     }
+                    PlaybackIssueControls()
                     ScrubberView().padding(.top, 14)
                     TransportControls().padding(.vertical, 18)
                     VolumeRow()
@@ -105,8 +116,6 @@ struct NowPlayingView: View {
                 router.initialNowPlayingPanel = nil
             }
         }
-        .presentationDragIndicator(.hidden)
-        .presentationCornerRadius(40)
         .sheet(isPresented: Binding(
             get: { router.playlistPickerSongs != nil },
             set: { if !$0 { router.playlistPickerSongs = nil } })) {
@@ -168,6 +177,8 @@ struct NowPlayingView: View {
 
     private var bottomBar: some View {
         HStack {
+            Spacer()
+            RepeatModeMenu().tint(.white)
             Spacer()
             panelButton(.lyrics, icon: "quote.bubble")
             Spacer()
@@ -286,7 +297,7 @@ struct ScrubberView: View {
             if local.isLossless { return "Lossless" }
             return local.suffix?.uppercased()
         }
-        let format = UserDefaults.standard.string(forKey: Pref.format) ?? "raw"
+        let format = player.streamingQuality.format
         if format != "raw" { return format.uppercased() }
         if song.isLossless { return "Lossless" }
         return song.suffix?.uppercased()
@@ -445,36 +456,38 @@ extension View {
 
 struct QueuePanel: View {
     @Environment(Player.self) private var player
+    @Environment(Router.self) private var router
 
     var body: some View {
         List {
             Section {
-                ForEach(Array(player.upNextRange), id: \.self) { i in
-                    queueRow(i)
+                HStack(spacing: 10) {
+                    toggle("shuffle", on: player.shuffle) { player.toggleShuffle() }
+                    toggle("infinity", on: player.autoplay) { player.autoplay.toggle() }
+                    toggle("clock.arrow.circlepath", on: false) { router.go(.history) }
+                        .accessibilityLabel("Listening History")
                 }
-                .onMove { player.moveUpNext(from: $0, to: $1) }
-                .onDelete { offsets in
-                    let base = player.upNextRange.lowerBound
-                    for o in offsets.sorted(by: >) { player.remove(at: base + o) }
-                }
-            } header: {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 10) {
-                        toggle("shuffle", on: player.shuffle) { player.toggleShuffle() }
-                        toggle(player.repeatMode == .one ? "repeat.1" : "repeat", on: player.repeatMode != .off) { player.cycleRepeat() }
-                        toggle("infinity", on: player.autoplay) { player.autoplay.toggle() }
-                    }
+                .listRowBackground(Color.clear)
+            }
+            if !player.manualRange.isEmpty {
+                Section {
+                    upcomingRows(player.manualRange)
+                } header: {
                     HStack {
-                        Text("Playing Next").font(.headline)
+                        Text("Queued Songs").font(.headline)
                         Spacer()
-                        if !player.upNextRange.isEmpty {
-                            Button("Clear") { player.clearUpNext() }.font(.subheadline)
-                        }
+                        Button("Clear") { player.clearManualQueue() }.font(.subheadline)
                     }
+                    .foregroundStyle(.white)
+                    .textCase(nil)
                 }
-                .foregroundStyle(.white)
-                .textCase(nil)
-                .padding(.vertical, 6)
+            }
+            if !player.sourceRange.isEmpty {
+                Section {
+                    upcomingRows(player.sourceRange)
+                } header: {
+                    Text("From Current Selection").font(.headline).foregroundStyle(.white).textCase(nil)
+                }
             }
             if player.autoplay && !player.autoplayRange.isEmpty {
                 Section {
@@ -497,6 +510,14 @@ struct QueuePanel: View {
         .scrollContentBackground(.hidden)
         .environment(\.editMode, .constant(.active))
         .fadedEdges()
+    }
+
+    private func upcomingRows(_ range: Range<Int>) -> some View {
+        ForEach(Array(range), id: \.self) { queueRow($0) }
+            .onMove { player.moveUpcoming(in: range, from: $0, to: $1) }
+            .onDelete { offsets in
+                for offset in offsets.sorted(by: >) { player.remove(at: range.lowerBound + offset) }
+            }
     }
 
     private func queueRow(_ i: Int) -> some View {

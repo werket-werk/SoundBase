@@ -192,10 +192,10 @@ struct SongsListView: View {
 
     var body: some View {
         List {
-            PlayShuffleButtons(play: { model.player.play(songs) }, shuffle: { model.player.play(songs, shuffled: true) })
+            PlayShuffleButtons(play: { model.playFromLibrary(songs) }, shuffle: { model.playFromLibrary(songs, shuffled: true) })
                 .listRowSeparator(.hidden)
             ForEach(Array(songs.enumerated()), id: \.element.id) { i, song in
-                SongRow(song: song) { model.player.play(songs, startAt: i) }
+                SongRow(song: song) { model.playFromLibrary(songs, startAt: i) }
                     .onAppear { if i == songs.count - 1 { Task { await loadMore() } } }
             }
             if loading { ProgressView().frame(maxWidth: .infinity) }
@@ -385,10 +385,10 @@ struct LovedView: View {
                     if !songs.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             ShelfHeader(title: "Songs")
-                            PlayShuffleButtons(play: { model.player.play(songs) }, shuffle: { model.player.play(songs, shuffled: true) })
+                            PlayShuffleButtons(play: { model.playFromLibrary(songs) }, shuffle: { model.playFromLibrary(songs, shuffled: true) })
                                 .padding(.horizontal).padding(.vertical, 8)
                             ForEach(Array(songs.enumerated()), id: \.element.id) { i, song in
-                                SongRow(song: song) { model.player.play(songs, startAt: i) }.padding(.horizontal)
+                                SongRow(song: song) { model.playFromLibrary(songs, startAt: i) }.padding(.horizontal)
                             }
                         }
                     }
@@ -407,40 +407,141 @@ struct LovedView: View {
 // MARK: - Downloads
 
 struct DownloadsView: View {
-    @Environment(AppModel.self) private var model
     @Environment(DownloadManager.self) private var downloads
+    @State private var category: DownloadCategory = .albums
+    @State private var query = ""
     @State private var confirm = false
 
     var body: some View {
-        let songs = downloads.sortedSongs
         List {
-            if songs.isEmpty {
-                EmptyStateView(title: "No Downloads", systemImage: "arrow.down.circle", message: "Download albums, playlists or songs to listen offline.")
-                    .listRowSeparator(.hidden)
-            } else {
-                PlayShuffleButtons(play: { model.player.play(songs) }, shuffle: { model.player.play(songs, shuffled: true) })
-                    .listRowSeparator(.hidden)
-                ForEach(Array(songs.enumerated()), id: \.element.id) { i, song in
-                    SongRow(song: song) { model.player.play(songs, startAt: i) }
-                }
-                .onDelete { offsets in offsets.map { songs[$0].id }.forEach(downloads.remove) }
-                Text("\(songs.count) songs · \(ByteCountFormatter.string(fromByteCount: downloads.totalBytes, countStyle: .file))")
-                    .font(.footnote).foregroundStyle(.secondary)
+            Picker("Downloads", selection: $category) {
+                ForEach(DownloadCategory.allCases) { Text($0.rawValue).tag($0) }
             }
+            .pickerStyle(.segmented)
+
+            if let issue = downloads.downloadIssue {
+                Label(issue, systemImage: "exclamationmark.circle")
+                    .foregroundStyle(.secondary)
+            }
+
+            switch category {
+            case .albums:
+                let albums = downloads.albums.filter { $0.tracks.contains { $0.matchesDownloadSearch(query) } }
+                if albums.isEmpty { emptyState("Albums") }
+                ForEach(albums, id: \.id) { album in
+                    let tracks = album.tracks
+                    if let first = tracks.first {
+                        NavigationLink {
+                            OfflineTracksView(title: first.album ?? "Unknown Album", tracks: tracks)
+                        } label: {
+                            Label(first.album ?? "Unknown Album", systemImage: "square.stack")
+                        }
+                    }
+                }
+            case .playlists:
+                let playlists = downloads.playlists.filter { playlist in
+                    query.isEmpty || playlist.name.localizedStandardContains(query)
+                        || playlist.tracks.contains { $0.matchesDownloadSearch(query) }
+                }
+                if playlists.isEmpty { emptyState("Playlists") }
+                ForEach(playlists) { playlist in
+                    NavigationLink {
+                        OfflineTracksView(title: playlist.name, tracks: playlist.tracks, playlist: playlist)
+                    } label: {
+                        Label(playlist.name, systemImage: "music.note.list")
+                    }
+                }
+            case .songs:
+                let songs = downloads.sortedSongs.filter { $0.matchesDownloadSearch(query) }
+                if songs.isEmpty { emptyState("Songs") }
+                OfflineTrackRows(tracks: songs, allowRemoval: true)
+            }
+
             if !downloads.inProgress.isEmpty {
                 Label("Downloading \(downloads.inProgress.count) songs…", systemImage: "arrow.down.circle.dotted")
                     .foregroundStyle(.secondary)
             }
+            Text(ByteCountFormatter.string(fromByteCount: downloads.totalBytes, countStyle: .file) + " used")
+                .font(.footnote).foregroundStyle(.secondary)
         }
         .listStyle(.plain)
         .navigationTitle("Downloaded")
+        .searchable(text: $query, prompt: "Find downloaded music")
         .toolbar {
-            if !songs.isEmpty {
+            if !downloads.songs.isEmpty || !downloads.playlists.isEmpty || !downloads.inProgress.isEmpty {
                 Button("Remove All", role: .destructive) { confirm = true }
             }
         }
-        .confirmationDialog("Remove all downloaded songs from this iPhone?", isPresented: $confirm, titleVisibility: .visible) {
+        .confirmationDialog("Remove all downloaded music from this iPhone?", isPresented: $confirm) {
             Button("Remove All Downloads", role: .destructive) { downloads.removeAll() }
         }
+    }
+
+    private func emptyState(_ title: String) -> some View {
+        Text(query.isEmpty ? "No Downloaded \(title)" : "No Matching \(title)")
+            .foregroundStyle(.secondary)
+    }
+}
+
+struct OfflineTracksView: View {
+    let title: String
+    let tracks: [Song]
+    var playlist: DownloadedPlaylist? = nil
+    @Environment(DownloadManager.self) private var downloads
+
+    var body: some View {
+        let available = tracks.filter { downloads.isDownloaded($0.id) }
+        List {
+            if let playlist { OfflinePlaylistActions(playlist: playlist) }
+            OfflineTrackRows(tracks: available)
+        }
+        .navigationTitle(title)
+    }
+}
+
+private struct OfflineTrackRows: View {
+    let tracks: [Song]
+    var allowRemoval = false
+    @Environment(AppModel.self) private var model
+    @Environment(DownloadManager.self) private var downloads
+
+    var body: some View {
+        if !tracks.isEmpty {
+            PlayShuffleButtons(
+                play: { model.playFromLibrary(tracks) },
+                shuffle: { model.playFromLibrary(tracks, shuffled: true) }
+            )
+            ForEach(Array(tracks.enumerated()), id: \.offset) { index, song in
+                SongRow(song: song) { model.playFromLibrary(tracks, startAt: index) }
+            }
+            .onDelete(perform: allowRemoval ? remove : nil)
+        }
+    }
+
+    private func remove(_ offsets: IndexSet) {
+        for offset in offsets { downloads.remove(tracks[offset].id) }
+    }
+}
+
+struct ListeningHistoryView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(Player.self) private var player
+
+    var body: some View {
+        List {
+            if player.listeningHistory.isEmpty {
+                ContentUnavailableView("No Listening History", systemImage: "clock.arrow.circlepath",
+                                       description: Text("Tracks you play on this device appear here."))
+            }
+            ForEach(player.listeningHistory) { entry in
+                VStack(alignment: .leading, spacing: 0) {
+                    SongRow(song: entry.song) { model.playFromLibrary([entry.song]) }
+                    Text(entry.playedAt, format: .dateTime.day().month().hour().minute())
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .listStyle(.plain)
+        .navigationTitle("Listening History")
     }
 }

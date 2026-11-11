@@ -13,7 +13,8 @@ final class CastManager: NSObject, GCKSessionManagerListener, GCKRemoteMediaClie
     private(set) var deviceName: String?
 
     @ObservationIgnored weak var player: Player?
-    @ObservationIgnored private var lastWindowSongID: String?
+    @ObservationIgnored private var lastWindowContentID: String?
+    @ObservationIgnored private var activeWindow: String?
     @ObservationIgnored private var lastPosition: Double = 0
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var configured = false
@@ -35,9 +36,10 @@ final class CastManager: NSObject, GCKSessionManagerListener, GCKRemoteMediaClie
     // MARK: Commands from the Player
 
     /// Loads `songs` as the receiver's queue, starting with the first one.
-    func load(_ songs: [Song], position: Double, autoplay: Bool) {
+    func load(_ songs: [Song], startingAt startIndex: Int, position: Double, autoplay: Bool) {
         guard let remote, let api = player?.client, !songs.isEmpty else { return }
-        let items = songs.map { song -> GCKMediaQueueItem in
+        let window = UUID().uuidString
+        let items = songs.enumerated().map { offset, song -> GCKMediaQueueItem in
             let metadata = GCKMediaMetadata(metadataType: .musicTrack)
             metadata.setString(song.title, forKey: kGCKMetadataKeyTitle)
             metadata.setString(song.artist ?? "", forKey: kGCKMetadataKeyArtist)
@@ -47,7 +49,7 @@ final class CastManager: NSObject, GCKSessionManagerListener, GCKRemoteMediaClie
             }
             let (url, mime) = Self.media(for: song, api: api)
             let info = GCKMediaInformationBuilder(contentURL: url)
-            info.contentID = song.id
+            info.contentID = "\(window):\(startIndex + offset):\(song.id)"
             info.streamType = song.isRadio ? .live : .buffered
             info.contentType = mime
             info.metadata = metadata
@@ -65,8 +67,9 @@ final class CastManager: NSObject, GCKSessionManagerListener, GCKRemoteMediaClie
         request.queueData = queue.build()
         request.autoplay = NSNumber(value: autoplay)
         request.startTime = position
+        activeWindow = window
+        lastWindowContentID = items.last?.mediaInformation.contentID
         remote.loadMedia(with: request.build())
-        lastWindowSongID = songs.last?.id
         lastPosition = position
     }
 
@@ -127,6 +130,8 @@ final class CastManager: NSObject, GCKSessionManagerListener, GCKRemoteMediaClie
         timer?.invalidate()
         timer = nil
         isCasting = false
+        activeWindow = nil
+        lastWindowContentID = nil
         deviceName = nil
         player?.castDidEnd(position: lastPosition)
     }
@@ -150,14 +155,25 @@ final class CastManager: NSObject, GCKSessionManagerListener, GCKRemoteMediaClie
     nonisolated func remoteMediaClient(_ client: GCKRemoteMediaClient, didUpdate mediaStatus: GCKMediaStatus?) {
         MainActor.assumeIsolated {
             guard let status = mediaStatus else { return }
-            let songID = status.mediaInformation?.contentID
+            let contentID = status.mediaInformation?.contentID
+            let fields = contentID?.split(separator: ":", maxSplits: 2) ?? []
+            var queueIndex: Int?
+            if fields.count == 3 {
+                if let activeWindow, String(fields[0]) != activeWindow { return }
+                if let index = Int(fields[1]), let player, player.queue.indices.contains(index),
+                   player.queue[index].id == fields[2] { queueIndex = index }
+            } else if let contentID, let player, activeWindow == nil {
+                queueIndex = player.queue.firstIndex { $0.id == contentID }
+            } else if activeWindow != nil {
+                return
+            }
             let playing = [.playing, .buffering, .loading].contains(status.playerState)
             let position = client.approximateStreamPosition()
             lastPosition = position
-            player?.castStatus(songID: songID, playing: playing, position: position)
-            if status.playerState == .idle, status.idleReason == .finished,
-               songID == nil || songID == lastWindowSongID {
-                player?.castQueueFinished()
+            player?.castStatus(queueIndex: queueIndex, playing: playing, position: position)
+            if status.playerState == .idle {
+                if status.idleReason == .error { player?.castFailed() }
+                if status.idleReason == .finished, contentID == lastWindowContentID { player?.castQueueFinished() }
             }
         }
     }

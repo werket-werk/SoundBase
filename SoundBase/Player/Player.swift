@@ -3,7 +3,25 @@ import MediaPlayer
 import Observation
 import SwiftUI
 
-enum RepeatMode: Int { case off, all, one }
+enum RepeatMode: Int, CaseIterable {
+    case off, all, one
+
+    var title: String {
+        switch self {
+        case .off: "Repeat Off"
+        case .all: "Repeat All"
+        case .one: "Repeat One"
+        }
+    }
+
+    var icon: String { self == .one ? "repeat.1" : "repeat" }
+}
+
+struct ListeningHistoryEntry: Codable, Identifiable {
+    let id: UUID
+    let song: Song
+    let playedAt: Date
+}
 
 /// Gapless queue player built on AVQueuePlayer. The app owns the full queue; AVQueuePlayer only
 /// ever holds the current item plus one preloaded item so transitions are seamless.
@@ -19,7 +37,9 @@ final class Player {
     private(set) var repeatMode: RepeatMode = .off
     /// Queue index where Autoplay ("similar music") songs begin, if any.
     private(set) var autoplayStart: Int?
-    private(set) var history: [Song] = []
+    private(set) var listeningHistory: [ListeningHistoryEntry] = []
+    private(set) var playbackIssue: String?
+    private var queueFinished = false
     private(set) var artwork: PlatformImage?
     var autoplay = UserDefaults.standard.object(forKey: Pref.autoplay) as? Bool ?? true {
         didSet {
@@ -29,17 +49,45 @@ final class Player {
     }
 
     var current: Song? { queue.indices.contains(index) ? queue[index] : nil }
-    /// Upcoming songs the user queued (excludes Autoplay).
-    var upNextRange: Range<Int> {
+    private var manualIndexes = IndexSet()
+
+    var manualRange: Range<Int> {
         let start = min(index + 1, queue.count)
-        let end = max(start, min(autoplayStart ?? queue.count, queue.count))
+        var end = start
+        while end < queue.count, manualIndexes.contains(end) { end += 1 }
         return start..<end
     }
+
+    var sourceRange: Range<Int> {
+        let start = manualRange.upperBound
+        return start..<max(start, min(autoplayStart ?? queue.count, queue.count))
+    }
+
     var autoplayRange: Range<Int> {
-        let start = max(index + 1, min(autoplayStart ?? queue.count, queue.count))
+        let start = max(min(index + 1, queue.count), min(autoplayStart ?? queue.count, queue.count))
         return start..<queue.count
     }
 
+    private struct SavedQueueSections: Codable {
+        let ids: [String]
+        let manualIndexes: IndexSet
+        let autoplayStart: Int?
+        let currentIndex: Int?
+        let position: Int?
+        var finished: Bool? = nil
+        var previousPosition: Int? = nil
+    }
+
+    @ObservationIgnored var queueAccount: String? {
+        didSet {
+            guard queueAccount != oldValue else { return }
+            lastServerPosition = nil
+            listeningHistory = []
+            if let queueAccount, let data = UserDefaults.standard.data(forKey: "listeningHistory.\(queueAccount)") {
+                listeningHistory = (try? JSONDecoder().decode([ListeningHistoryEntry].self, from: data)) ?? []
+            }
+        }
+    }
     @ObservationIgnored var client: SubsonicClient?
     @ObservationIgnored weak var downloads: DownloadManager?
     @ObservationIgnored var onStateChange: (() -> Void)?
@@ -50,6 +98,10 @@ final class Player {
 
     @ObservationIgnored private let avPlayer = AVQueuePlayer()
     @ObservationIgnored private var currentItem: AVPlayerItem?
+    @ObservationIgnored private var itemStatus: NSKeyValueObservation?
+    @ObservationIgnored private var stallTask: Task<Void, Never>?
+    @ObservationIgnored private var recordedCurrent = false
+    @ObservationIgnored private var retryPosition: Double = 0
     @ObservationIgnored private var preloadedItem: AVPlayerItem?
     @ObservationIgnored private var originalOrder: [Song] = []
     @ObservationIgnored private var timeObserver: Any?
@@ -57,9 +109,15 @@ final class Player {
     @ObservationIgnored private var scrobbled = false
     @ObservationIgnored private var fetchingAutoplay = false
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var queueWriteTask: Task<Void, Never>?
+    @ObservationIgnored private var queueWriteRevision = 0
+    @ObservationIgnored private var lastServerPosition: Int?
     @ObservationIgnored private var lastNowPlayingPush: Double = 0
 
     init() {
+        #if os(iOS)
+        _ = StreamingConnection.shared
+        #endif
         #if os(iOS)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, policy: .longFormAudio)
         #endif
@@ -77,6 +135,11 @@ final class Player {
             let item = note.object as? AVPlayerItem
             MainActor.assumeIsolated { self?.itemDidEnd(item) }
         }
+        NotificationCenter.default.addObserver(forName: AVPlayerItem.failedToPlayToEndTimeNotification,
+                                               object: nil, queue: .main) { [weak self] note in
+            guard let item = note.object as? AVPlayerItem else { return }
+            MainActor.assumeIsolated { self?.itemFailed(item) }
+        }
         #if os(iOS)
         NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init)
@@ -91,9 +154,10 @@ final class Player {
 
     // MARK: - Queue control
 
-    func play(_ songs: [Song], startAt: Int = 0, shuffled: Bool = false) {
+    func play(_ songs: [Song], startAt: Int = 0, shuffled: Bool = false, autoPlay: Bool = true) {
         guard !songs.isEmpty else { return }
         originalOrder = songs
+        manualIndexes = []
         shuffle = shuffled
         autoplayStart = nil
         if shuffled {
@@ -106,87 +170,140 @@ final class Player {
             queue = songs
             index = min(max(startAt, 0), songs.count - 1)
         }
-        startCurrent()
+        startCurrent(autoPlay: autoPlay)
     }
 
-    func playRadio(_ station: RadioStation) {
-        guard let url = URL(string: station.streamUrl) else { return }
+    func playRadio(_ station: RadioStation) -> Bool {
+        guard let url = URL(string: station.streamUrl), let scheme = url.scheme,
+              ["http", "https"].contains(scheme.lowercased()), url.host != nil else { return false }
         let id = "radio:\(station.id)"
         radioURLs[id] = url
         play([Song(id: id, title: station.name, artist: "Internet Radio")])
+        return true
     }
 
     func playNext(_ songs: [Song]) {
-        guard !songs.isEmpty else { return }
-        if queue.isEmpty { play(songs); return }
-        queue.insert(contentsOf: songs, at: index + 1)
-        if let a = autoplayStart, a > index { autoplayStart = a + songs.count }
-        originalOrder.append(contentsOf: songs)
-        queueEdited()
+        insertManual(songs, at: manualRange.lowerBound)
     }
 
-    func playLast(_ songs: [Song]) {
+    func addToQueue(_ songs: [Song]) {
+        insertManual(songs, at: manualRange.upperBound)
+    }
+
+    private func insertManual(_ songs: [Song], at position: Int) {
         guard !songs.isEmpty else { return }
-        if queue.isEmpty { play(songs); return }
-        let at = max(index + 1, min(autoplayStart ?? queue.count, queue.count))
-        queue.insert(contentsOf: songs, at: at)
-        if autoplayStart != nil { autoplayStart = at + songs.count }
-        originalOrder.append(contentsOf: songs)
+        if queue.isEmpty {
+            play(songs, autoPlay: false)
+            manualIndexes = IndexSet(integersIn: 0..<songs.count)
+            scheduleQueueSave()
+            return
+        }
+        queue.insert(contentsOf: songs, at: position)
+        manualIndexes.shift(startingAt: position, by: songs.count)
+        manualIndexes.insert(integersIn: position..<(position + songs.count))
+        if let start = autoplayStart, position <= start || index >= start {
+            autoplayStart = max(index + 1, start) + songs.count
+        }
         queueEdited()
     }
 
     func jump(to newIndex: Int) {
         guard queue.indices.contains(newIndex) else { return }
-        if let current { history.append(current) }
         index = newIndex
-        if let a = autoplayStart, newIndex >= a { autoplayStart = newIndex }
+        prioritizeManualUpcoming()
         startCurrent()
+    }
+
+    private func prioritizeManualUpcoming() {
+        let start = min(index + 1, queue.count)
+        let positions = manualIndexes.intersection(IndexSet(integersIn: start..<queue.count))
+        guard !positions.isEmpty else { return }
+        let queued = positions.map { queue[$0] }
+        let source = (start..<queue.count).filter { !positions.contains($0) }.map { queue[$0] }
+        queue.replaceSubrange(start..<queue.count, with: queued + source)
+        manualIndexes.subtract(positions)
+        manualIndexes.insert(integersIn: start..<(start + queued.count))
+        if let boundary = autoplayStart {
+            let movedAhead = positions.filter { $0 >= boundary }.count
+            autoplayStart = max(start, boundary) + movedAhead
+        }
+    }
+
+    private var repeatStartIndex: Int {
+        queue.indices.first { !manualIndexes.contains($0) } ?? 0
+    }
+
+    private func wrapRepeatQueue() {
+        if manualIndexes.count < queue.count {
+            for offset in manualIndexes.reversed() { queue.remove(at: offset) }
+            manualIndexes = []
+        }
+        index = 0
     }
 
     func remove(at absoluteIndex: Int) {
         guard queue.indices.contains(absoluteIndex), absoluteIndex != index else { return }
         queue.remove(at: absoluteIndex)
+        manualIndexes.remove(absoluteIndex)
+        manualIndexes.shift(startingAt: absoluteIndex + 1, by: -1)
         if absoluteIndex < index { index -= 1 }
         if let a = autoplayStart, absoluteIndex < a { autoplayStart = a - 1 }
         queueEdited()
     }
 
-    func moveUpNext(from source: IndexSet, to destination: Int) {
-        let range = upNextRange
-        guard !range.isEmpty else { return }
+    func moveUpcoming(in range: Range<Int>, from source: IndexSet, to destination: Int) {
+        guard !range.isEmpty, range == manualRange || range == sourceRange,
+              source.allSatisfy({ $0 < range.count }), (0...range.count).contains(destination) else { return }
         var slice = Array(queue[range])
         slice.move(fromOffsets: source, toOffset: destination)
         queue.replaceSubrange(range, with: slice)
         queueEdited()
     }
 
-    func clearUpNext() {
-        let range = upNextRange
+    func clearManualQueue() {
+        let range = manualRange
+        guard !range.isEmpty else { return }
         queue.removeSubrange(range)
-        if let a = autoplayStart { autoplayStart = max(index + 1, a - range.count) }
+        manualIndexes.remove(integersIn: range)
+        manualIndexes.shift(startingAt: range.upperBound, by: -range.count)
+        if let start = autoplayStart, start >= range.upperBound { autoplayStart = start - range.count }
         queueEdited()
     }
 
     func toggleShuffle() {
         shuffle.toggle()
-        let range = upNextRange
-        guard !range.isEmpty, let cur = current else { queueEdited(); return }
+        let range = sourceRange
+        let positions = range.filter { !manualIndexes.contains($0) }
+        let songs = positions.map { queue[$0] }
+        let reordered: [Song]
         if shuffle {
-            queue.replaceSubrange(range, with: queue[range].shuffled())
-        } else if let pos = originalOrder.firstIndex(where: { $0.id == cur.id }) {
-            let upcomingIDs = Set(queue[range].map(\.id))
-            let restored = originalOrder[(pos + 1)...].filter { upcomingIDs.contains($0.id) }.uniqued()
-            let leftovers = queue[range].filter { s in !restored.contains(where: { $0.id == s.id }) }
-            queue.replaceSubrange(range, with: restored + leftovers)
+            reordered = songs.shuffled()
+        } else {
+            var ranks: [String: Int] = [:]
+            for (index, song) in originalOrder.enumerated() where ranks[song.id] == nil {
+                ranks[song.id] = index
+            }
+            reordered = songs.enumerated().sorted {
+                (ranks[$0.element.id] ?? Int.max, $0.offset) < (ranks[$1.element.id] ?? Int.max, $1.offset)
+            }.map(\.element)
         }
+        for (position, song) in zip(positions, reordered) { queue[position] = song }
         queueEdited()
     }
 
     func cycleRepeat() {
-        repeatMode = switch repeatMode { case .off: .all; case .all: .one; case .one: .off }
-        avPlayer.actionAtItemEnd = repeatMode == .one ? .none : .advance
-        preloadNext()
-        onStateChange?()
+        setRepeatMode(RepeatMode(rawValue: (repeatMode.rawValue + 1) % RepeatMode.allCases.count) ?? .off)
+    }
+
+    func setRepeatMode(_ mode: RepeatMode) {
+        guard mode != repeatMode else { return }
+        repeatMode = mode
+        avPlayer.actionAtItemEnd = mode == .one ? .none : .advance
+        if mode != .off, let start = autoplayStart {
+            queue.removeSubrange(max(index + 1, start)..<queue.count)
+            autoplayStart = nil
+        }
+        queueEdited()
     }
 
     // MARK: - Transport
@@ -194,11 +311,15 @@ final class Player {
     func togglePlayPause() { isPlaying ? pause() : resume() }
 
     func pause() {
-        if let cast, cast.isCasting { cast.pause(); return }
-        avPlayer.pause()
+        if let cast, cast.isCasting { cast.pause() }
+        else { avPlayer.pause() }
+        scheduleQueueSave(immediately: true)
     }
 
     func resume() {
+        guard current != nil else { return }
+        if queueFinished { startCurrent(); return }
+        if playbackIssue != nil { retryPlayback(); return }
         if let cast, cast.isCasting {
             if current != nil, cast.isCasting, !isPlaying { cast.play() }
             return
@@ -210,11 +331,10 @@ final class Player {
 
     func next() {
         guard !queue.isEmpty else { return }
-        if let current { history.append(current) }
         if index + 1 < queue.count {
             index += 1
         } else if repeatMode == .all {
-            index = 0
+            wrapRepeatQueue()
         } else {
             Task {
                 await fillAutoplayIfNeeded(force: true)
@@ -228,6 +348,7 @@ final class Player {
     func previous() {
         if elapsed > 3 || index == 0 { seek(to: 0); return }
         index -= 1
+        prioritizeManualUpcoming()
         startCurrent()
     }
 
@@ -239,18 +360,38 @@ final class Player {
             avPlayer.seek(to: t, toleranceBefore: .zero, toleranceAfter: .zero)
         }
         elapsed = max(0, seconds)
+        if playbackIssue != nil { retryPosition = elapsed }
+        if !isPlaying { scheduleQueueSave(immediately: true) }
         updateNowPlaying()
         onStateChange?()
     }
 
-    func stop() {
+    func stop(clearSavedQueue: Bool = true) {
+        saveTask?.cancel()
+        if clearSavedQueue, current != nil, let client {
+            if let queueAccount {
+                UserDefaults.standard.set(UUID().uuidString, forKey: "queueStopped.\(queueAccount)")
+                UserDefaults.standard.removeObject(forKey: "queueSections.\(queueAccount)")
+            }
+            writeQueue(using: client, ids: [], currentID: nil, position: 0)
+        }
+        cast?.pause()
+        queueFinished = false
+        playbackIssue = nil
+        stallTask?.cancel()
+        stallTask = nil
+        itemStatus = nil
         avPlayer.pause()
         avPlayer.removeAllItems()
         currentItem = nil
         preloadedItem = nil
         queue = []
+        originalOrder = []
+        manualIndexes = []
+        autoplayStart = nil
         index = 0
         isPlaying = false
+        isBuffering = false
         elapsed = 0
         duration = 0
         artwork = nil
@@ -263,7 +404,7 @@ final class Player {
     var transferSnapshot: PlaybackTransfer? {
         guard current != nil, !isCasting, !queue.contains(where: \.isRadio) else { return nil }
         return PlaybackTransfer(queue: queue, index: index, position: max(0, elapsed),
-                                playing: avPlayer.timeControlStatus != .paused)
+                                playing: avPlayer.timeControlStatus != .paused, manualIndexes: manualIndexes, autoplayStart: autoplayStart)
     }
 
     func canReceive(_ transfer: PlaybackTransfer) async -> Bool {
@@ -275,40 +416,126 @@ final class Player {
         originalOrder = transfer.queue
         queue = transfer.queue
         index = transfer.index
-        autoplayStart = nil
+        manualIndexes = (transfer.manualIndexes ?? []).intersection(IndexSet(integersIn: queue.indices))
+        autoplayStart = transfer.autoplayStart.flatMap { queue.indices.contains($0) ? $0 : nil }
         shuffle = false
         startCurrent(autoPlay: transfer.playing, at: transfer.position)
     }
 
     func releaseForTransfer() {
-        saveTask?.cancel()
-        stop()
+        stop(clearSavedQueue: false)
+    }
+
+    private var restoreBlocked: Bool {
+        guard let queueAccount else { return false }
+        return UserDefaults.standard.string(forKey: "queueStopped.\(queueAccount)") != nil
     }
 
     func restoreQueue() async {
-        guard queue.isEmpty, let client, let saved = try? await client.playQueue(),
-              let entries = saved.entry, !entries.isEmpty, queue.isEmpty else { return }
+        guard queue.isEmpty, !restoreBlocked, let client, let saved = try? await client.playQueue(),
+              let entries = saved.entry, !entries.isEmpty, queue.isEmpty, !restoreBlocked,
+              self.client === client else { return }
         originalOrder = entries
         queue = entries
         index = entries.firstIndex { $0.id == saved.current } ?? 0
-        startCurrent(autoPlay: false, at: Double(saved.position ?? 0) / 1000)
+        lastServerPosition = saved.position ?? 0
+        var position = lastServerPosition ?? 0
+        var finished = false
+        if let queueAccount, let data = UserDefaults.standard.data(forKey: "queueSections.\(queueAccount)"),
+           let sections = try? JSONDecoder().decode(SavedQueueSections.self, from: data),
+           sections.ids == entries.map(\.id) {
+            manualIndexes = sections.manualIndexes.intersection(IndexSet(integersIn: entries.indices))
+            autoplayStart = sections.autoplayStart.flatMap { entries.indices.contains($0) ? $0 : nil }
+            if let currentIndex = sections.currentIndex, entries.indices.contains(currentIndex),
+               entries[currentIndex].id == saved.current,
+               sections.position == position || sections.previousPosition == position {
+                index = currentIndex
+                position = sections.position ?? position
+                finished = sections.finished == true
+            }
+        }
+        prioritizeManualUpcoming()
+        startCurrent(autoPlay: false, at: Double(position) / 1000, finished: finished)
     }
 
-    private func scheduleQueueSave() {
+    private func scheduleQueueSave(immediately: Bool = false) {
         saveTask?.cancel()
-        saveTask = Task {
-            try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled, let client else { return }
-            let ids = queue.filter { !$0.isRadio }.prefix(500).map(\.id)
-            guard !ids.isEmpty else { return }
-            try? await client.savePlayQueue(ids: Array(ids), current: current?.id, positionMs: Int(elapsed * 1000))
+        if immediately { saveQueue() }
+        else {
+            saveTask = Task {
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                saveQueue()
+            }
+        }
+    }
+
+    private func saveQueue() {
+        guard let client, let current, !current.isRadio else { return }
+        let savedPositions = queue.indices.filter { !queue[$0].isRadio }.prefix(500)
+        let ids = savedPositions.map { queue[$0].id }
+        let position = queueFinished ? 0 : Int(max(0, elapsed) * 1000)
+        if let queueAccount {
+            let manual = IndexSet(savedPositions.enumerated().compactMap {
+                manualIndexes.contains($0.element) ? $0.offset : nil
+            })
+            let start = autoplayStart.flatMap { savedPositions.firstIndex(of: $0) }
+                .map { savedPositions.distance(from: savedPositions.startIndex, to: $0) }
+            let currentIndex = savedPositions.firstIndex(of: index)
+                .map { savedPositions.distance(from: savedPositions.startIndex, to: $0) }
+            let sections = SavedQueueSections(ids: ids, manualIndexes: manual, autoplayStart: start,
+                                              currentIndex: currentIndex, position: position,
+                                              finished: queueFinished, previousPosition: lastServerPosition)
+            if let data = try? JSONEncoder().encode(sections) {
+                UserDefaults.standard.set(data, forKey: "queueSections.\(queueAccount)")
+            }
+        }
+        writeQueue(using: client, ids: ids, currentID: current.id, position: position)
+    }
+
+    private func writeQueue(using client: SubsonicClient, ids: [String], currentID: String?, position: Int) {
+        let previous = queueWriteTask
+        queueWriteRevision += 1
+        let revision = queueWriteRevision
+        let stoppedKey = queueAccount.map { "queueStopped.\($0)" }
+        let marker = stoppedKey.flatMap { UserDefaults.standard.string(forKey: $0) }
+        queueWriteTask = Task {
+            await previous?.value
+            guard revision == queueWriteRevision else { return }
+            do {
+                try await client.savePlayQueue(ids: ids, current: currentID, positionMs: position)
+                if self.client === client { lastServerPosition = ids.isEmpty ? nil : position }
+                if let stoppedKey, let marker, UserDefaults.standard.string(forKey: stoppedKey) == marker {
+                    UserDefaults.standard.removeObject(forKey: stoppedKey)
+                }
+            } catch {
+                // Keep the local checkpoint if the server is unreachable.
+            }
         }
     }
 
     // MARK: - AVQueuePlayer plumbing
 
-    private func startCurrent(autoPlay: Bool = true, at position: Double = 0) {
-        guard let song = current else { stop(); return }
+    func retryPlayback() {
+        guard playbackIssue != nil, current != nil else { return }
+        startCurrent(at: retryPosition, retrying: true)
+    }
+
+    private func startCurrent(autoPlay: Bool = true, at position: Double = 0, retrying: Bool = false, finished: Bool = false) {
+        guard let song = current else { return }
+        queueFinished = finished
+        playbackIssue = nil
+        stallTask?.cancel()
+        stallTask = nil
+        itemStatus = nil
+        retryPosition = position
+        if finished {
+            currentItem = nil
+            preloadedItem = nil
+            elapsed = 0
+            duration = Double(song.duration ?? 0)
+            trackChanged(announce: false)
+            return
+        }
         if let cast, cast.isCasting {
             avPlayer.pause()
             avPlayer.removeAllItems()
@@ -317,8 +544,8 @@ final class Player {
             elapsed = position
             duration = Double(song.duration ?? 0)
             scrobbled = false
-            cast.load(Array(queue[index...].prefix(100)), position: position, autoplay: autoPlay)
-            trackChanged(announce: autoPlay)
+            loadCastQueue(cast, position: position, autoPlay: autoPlay)
+            trackChanged(announce: autoPlay && !retrying, resetHistory: !retrying)
             return
         }
         avPlayer.removeAllItems()
@@ -326,6 +553,7 @@ final class Player {
         let item = makeItem(song)
         currentItem = item
         avPlayer.insert(item, after: nil)
+        observeItemStatus(item)
         if position > 0 { item.seek(to: CMTime(seconds: position, preferredTimescale: 600), completionHandler: nil) }
         elapsed = position
         duration = Double(song.duration ?? 0)
@@ -336,7 +564,7 @@ final class Player {
             activateSession()
             avPlayer.play()
         }
-        trackChanged(announce: autoPlay)
+        trackChanged(announce: autoPlay && !retrying, resetHistory: !retrying)
     }
 
     private func preloadNext() {
@@ -344,7 +572,7 @@ final class Player {
         guard repeatMode != .one, currentItem != nil else { return }
         let nextSong: Song?
         if queue.indices.contains(index + 1) { nextSong = queue[index + 1] }
-        else if repeatMode == .all, !queue.isEmpty { nextSong = queue[0] }
+        else if repeatMode == .all, !queue.isEmpty { nextSong = queue[repeatStartIndex] }
         else { nextSong = nil }
         guard let nextSong, !nextSong.isRadio else { return }
         let item = makeItem(nextSong)
@@ -355,7 +583,11 @@ final class Player {
     }
 
     private func queueEdited() {
-        preloadNext()
+        if let cast, cast.isCasting, current != nil {
+            loadCastQueue(cast, position: elapsed, autoPlay: isPlaying)
+        } else {
+            preloadNext()
+        }
         scheduleQueueSave()
         onStateChange?()
         Task { await fillAutoplayIfNeeded() }
@@ -364,9 +596,21 @@ final class Player {
     private func playbackURL(for song: Song) -> URL? {
         if let radio = radioURLs[song.id] { return radio }
         if let local = downloads?.localURL(for: song.id) { return local }
+        let quality = streamingQuality
+        return client?.streamURL(song.id, maxBitRate: quality.bitRate, format: quality.format)
+    }
+
+    var streamingQuality: (bitRate: Int, format: String) {
         let defaults = UserDefaults.standard
-        return client?.streamURL(song.id, maxBitRate: defaults.integer(forKey: Pref.maxBitRate),
-                                 format: defaults.string(forKey: Pref.format) ?? "raw")
+        let format = defaults.string(forKey: Pref.format) ?? "raw"
+        #if os(iOS)
+        if StreamingConnection.shared.isCellular,
+           let cellularRate = defaults.object(forKey: Pref.cellularBitRate) as? Int, cellularRate >= 0 {
+            if cellularRate == 0 { return (0, "raw") }
+            return (cellularRate, format == "raw" ? "mp3" : format)
+        }
+        #endif
+        return (defaults.integer(forKey: Pref.maxBitRate), format)
     }
 
     private func makeItem(_ song: Song) -> AVPlayerItem {
@@ -377,30 +621,50 @@ final class Player {
     }
 
     private func currentItemChanged() {
+        guard playbackIssue == nil else { return }
+        if let currentItem, currentItem.status == .failed {
+            itemFailed(currentItem)
+            return
+        }
         let item = avPlayer.currentItem
         if let item, item === preloadedItem {
-            if let current { history.append(current) }
-            index = index + 1 < queue.count ? index + 1 : 0
+            if index + 1 < queue.count { index += 1 }
+            else { wrapRepeatQueue() }
+            stallTask?.cancel()
+            stallTask = nil
             currentItem = item
+            observeItemStatus(item)
             preloadedItem = nil
             elapsed = 0
+            retryPosition = 0
             duration = Double(current?.duration ?? 0)
             scrobbled = false
             if let song = current { applyGain(song) }
             preloadNext()
             trackChanged(announce: true)
+            syncStatus()
         } else if item == nil, currentItem != nil, repeatMode != .one {
-            // Reached the end of the queue.
             currentItem = nil
-            if autoplay {
-                Task {
-                    await fillAutoplayIfNeeded(force: true)
-                    if index + 1 < queue.count { index += 1; startCurrent() }
-                }
-            } else {
-                isPlaying = false
-                onStateChange?()
-            }
+            finishQueue()
+        }
+    }
+
+    private func finishQueue() {
+        guard !queueFinished, let song = current else { return }
+        queueFinished = true
+        if !isCasting { avPlayer.pause() }
+        isPlaying = false
+        isBuffering = false
+        elapsed = 0
+        updateNowPlaying()
+        scheduleQueueSave(immediately: true)
+        onStateChange?()
+        guard autoplay else { return }
+        Task {
+            await fillAutoplayIfNeeded(force: true)
+            guard queueFinished, current?.id == song.id, index + 1 < queue.count else { return }
+            index += 1
+            startCurrent()
         }
     }
 
@@ -412,16 +676,56 @@ final class Player {
         if let song = current { scrobble(song, submission: false) }
     }
 
+    private func observeItemStatus(_ item: AVPlayerItem) {
+        itemStatus = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            if item.status == .failed { Task { @MainActor in self?.itemFailed(item) } }
+        }
+    }
+
+    private func itemFailed(_ item: AVPlayerItem) {
+        guard item === currentItem, !isCasting else { return }
+        showPlaybackIssue("This track couldn’t be played.")
+    }
+
+    private func showPlaybackIssue(_ message: String) {
+        guard playbackIssue == nil, current != nil else { return }
+        playbackIssue = message
+        stallTask?.cancel()
+        stallTask = nil
+        if !isCasting { avPlayer.pause() }
+        isPlaying = false
+        isBuffering = false
+        updateNowPlaying()
+        onStateChange?()
+    }
+
     private func syncStatus() {
-        isPlaying = avPlayer.timeControlStatus != .paused
-        isBuffering = avPlayer.timeControlStatus == .waitingToPlayAtSpecifiedRate
+        guard !isCasting else { return }
+        let active = playbackIssue == nil && !queueFinished && currentItem != nil
+        let waiting = avPlayer.timeControlStatus == .waitingToPlayAtSpecifiedRate && active
+        isPlaying = avPlayer.timeControlStatus != .paused && active
+        isBuffering = waiting
+        if !waiting {
+            stallTask?.cancel()
+            stallTask = nil
+        } else if stallTask == nil, let item = currentItem {
+            stallTask = Task { [weak self, weak item] in
+                do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                guard let self, let item, currentItem === item, isBuffering else { return }
+                showPlaybackIssue("The stream stopped responding.")
+            }
+        }
         updateNowPlaying()
         onStateChange?()
     }
 
     private func tick(_ seconds: Double) {
-        guard seconds.isFinite, currentItem != nil else { return }
+        guard seconds.isFinite, currentItem != nil, playbackIssue == nil else { return }
         elapsed = seconds
+        if avPlayer.timeControlStatus == .playing {
+            retryPosition = seconds
+            recordListeningHistory()
+        }
         if let d = avPlayer.currentItem?.duration.seconds, d.isFinite, d > 0 { duration = d }
         checkScrobble()
         if abs(seconds - lastNowPlayingPush) > 15 {
@@ -431,7 +735,8 @@ final class Player {
         }
     }
 
-    private func trackChanged(announce: Bool) {
+    private func trackChanged(announce: Bool, resetHistory: Bool = true) {
+        if resetHistory { recordedCurrent = false }
         artwork = nil
         updateNowPlaying()
         scheduleQueueSave()
@@ -448,7 +753,17 @@ final class Player {
                 self.onStateChange?()
             }
         }
-        Task { await fillAutoplayIfNeeded() }
+        if !queueFinished { Task { await fillAutoplayIfNeeded() } }
+    }
+
+    private func recordListeningHistory() {
+        guard !recordedCurrent, elapsed > 0, let song = current, !song.isRadio, let queueAccount else { return }
+        recordedCurrent = true
+        listeningHistory.insert(ListeningHistoryEntry(id: UUID(), song: song, playedAt: Date()), at: 0)
+        if listeningHistory.count > 100 { listeningHistory.removeLast(listeningHistory.count - 100) }
+        if let data = try? JSONEncoder().encode(listeningHistory) {
+            UserDefaults.standard.set(data, forKey: "listeningHistory.\(queueAccount)")
+        }
     }
 
     // MARK: - Autoplay (endless similar music)
@@ -463,6 +778,7 @@ final class Player {
             songs = (try? await client.similarSongs2(artistId: artistId, count: 30)) ?? []
         }
         if songs.isEmpty { songs = (try? await client.randomSongs(size: 30)) ?? [] }
+        guard autoplay, repeatMode == .off, current?.id == seed.id, self.client === client else { return }
         let existing = Set(queue.suffix(200).map(\.id))
         songs = songs.filter { !existing.contains($0.id) }.uniqued()
         guard !songs.isEmpty else { return }
@@ -474,6 +790,11 @@ final class Player {
 
     // MARK: - Google Cast
 
+    private func loadCastQueue(_ cast: CastManager, position: Double, autoPlay: Bool) {
+        cast.load(Array(queue[index...].prefix(repeatMode == .one ? 1 : 100)), startingAt: index,
+                  position: position, autoplay: autoPlay)
+    }
+
     /// Hands the current queue to the receiver and pauses local playback.
     func castDidStart() {
         guard current != nil else { return }
@@ -484,37 +805,48 @@ final class Player {
     /// Back to the phone, paused where the receiver left off.
     func castDidEnd(position: Double) {
         guard current != nil else { return }
-        startCurrent(autoPlay: false, at: position)
+        startCurrent(autoPlay: false, at: position, finished: queueFinished)
         isPlaying = false
     }
 
     func castTick(position: Double) {
-        guard position.isFinite else { return }
+        guard position.isFinite, playbackIssue == nil, !queueFinished, current != nil else { return }
         elapsed = position
+        if isPlaying {
+            retryPosition = position
+            recordListeningHistory()
+        }
         checkScrobble()
     }
 
-    func castStatus(songID: String?, playing: Bool, position: Double) {
+    func castStatus(queueIndex: Int?, playing: Bool, position: Double) {
+        guard !queueFinished, current != nil else { return }
         if isPlaying != playing {
             isPlaying = playing
             onStateChange?()
         }
         if position.isFinite { elapsed = position }
-        if let songID, songID != current?.id,
-           let i = queue[index...].firstIndex(where: { $0.id == songID }) ?? queue.firstIndex(where: { $0.id == songID }) {
-            if let current { history.append(current) }
-            index = i
+        if let queueIndex, queue.indices.contains(queueIndex), queueIndex != index {
+            index = queueIndex
             duration = Double(current?.duration ?? 0)
             scrobbled = false
+            retryPosition = max(0, elapsed)
             trackChanged(announce: true)
         }
         updateNowPlaying()
     }
 
+    func castFailed() {
+        guard isCasting else { return }
+        showPlaybackIssue("The Cast device couldn’t play this track.")
+    }
+
     /// The receiver played everything it was given; continue with the rest of the queue or Autoplay.
     func castQueueFinished() {
         guard isCasting else { return }
-        next()
+        if repeatMode == .one { startCurrent() }
+        else if repeatMode == .all || index + 1 < queue.count { next() }
+        else { finishQueue() }
     }
 
     private func checkScrobble() {
@@ -596,6 +928,7 @@ final class Player {
         }
         handle(center.playCommand) { $0.resume() }
         handle(center.pauseCommand) { $0.pause() }
+        handle(center.stopCommand) { $0.stop() }
         handle(center.togglePlayPauseCommand) { $0.togglePlayPause() }
         handle(center.nextTrackCommand) { $0.next() }
         handle(center.previousTrackCommand) { $0.previous() }

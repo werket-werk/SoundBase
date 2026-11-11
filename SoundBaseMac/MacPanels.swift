@@ -91,6 +91,7 @@ struct MacLyricsView: View {
 
 struct MacQueueView: View {
     @Environment(Player.self) private var player
+    @Environment(Router.self) private var router
 
     var body: some View {
         @Bindable var player = player
@@ -98,19 +99,19 @@ struct MacQueueView: View {
             if let current = player.current {
                 Section("Now Playing") { row(player.index, current) }
             }
-            Section {
-                ForEach(Array(player.upNextRange), id: \.self) { i in row(i, player.queue[i]) }
-                    .onMove { player.moveUpNext(from: $0, to: $1) }
-                    .onDelete { offsets in
-                        let base = player.upNextRange.lowerBound
-                        offsets.sorted(by: >).forEach { player.remove(at: base + $0) }
+            if !player.manualRange.isEmpty {
+                Section {
+                    upcomingRows(player.manualRange)
+                } header: {
+                    HStack {
+                        Text("Queued Songs")
+                        Spacer()
+                        Button("Clear") { player.clearManualQueue() }.buttonStyle(.link)
                     }
-            } header: {
-                HStack {
-                    Text("Playing Next")
-                    Spacer()
-                    if !player.upNextRange.isEmpty { Button("Clear") { player.clearUpNext() }.buttonStyle(.link) }
                 }
+            }
+            if !player.sourceRange.isEmpty {
+                Section("From Current Selection") { upcomingRows(player.sourceRange) }
             }
             if player.autoplay && !player.autoplayRange.isEmpty {
                 Section("Autoplay — similar music") {
@@ -119,11 +120,22 @@ struct MacQueueView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            Toggle("Autoplay similar music when the queue ends", isOn: $player.autoplay)
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .padding(10)
+            VStack(alignment: .leading, spacing: 8) {
+                Button("Listening History", systemImage: "clock.arrow.circlepath") { router.go(.history) }
+                Toggle("Autoplay similar music when the queue ends", isOn: $player.autoplay)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .padding(10)
         }
+    }
+
+    private func upcomingRows(_ range: Range<Int>) -> some View {
+        ForEach(Array(range), id: \.self) { row($0, player.queue[$0]) }
+            .onMove { player.moveUpcoming(in: range, from: $0, to: $1) }
+            .onDelete { offsets in
+                for offset in offsets.sorted(by: >) { player.remove(at: range.lowerBound + offset) }
+            }
     }
 
     private func row(_ i: Int, _ song: Song) -> some View {
@@ -149,7 +161,6 @@ struct MacSettingsView: View {
     @AppStorage(Pref.maxBitRate) private var maxBitRate = 0
     @AppStorage(Pref.format) private var format = "raw"
     @AppStorage(Pref.replayGain) private var replayGain = 0
-    @AppStorage(Pref.downloadQuality) private var downloadQuality = Pref.defaultDownloadQuality
     @AppStorage(AccentTheme.storageKey) private var accent = AccentTheme.fallback.rawValue
     @AppStorage(AppearanceMode.storageKey) private var appearance = AppearanceMode.system.rawValue
     private let nearby = NearbyPlayback.shared
@@ -177,6 +188,9 @@ struct MacSettingsView: View {
             }
             .formStyle(.grouped)
             .tabItem { Label("Appearance", systemImage: "paintpalette") }
+
+            HomeLayoutSettings()
+                .tabItem { Label("Home", systemImage: "house") }
 
             Form {
                 Picker("Streaming Quality", selection: $maxBitRate) {
@@ -222,12 +236,10 @@ struct MacSettingsView: View {
             .tabItem { Label("Devices", systemImage: "desktopcomputer") }
 
             Form {
-                Picker("Download Quality", selection: $downloadQuality) {
-                    Text("Original").tag(0)
-                    Text("AAC 256 kbps").tag(256)
-                    Text("AAC 192 kbps").tag(192)
-                    Text("AAC 128 kbps").tag(128)
-                }
+                DownloadQualitySettings()
+                Text("Applies to new downloads. MP3 and Opus require server support. For Opus, use a server profile that sends Opus in MP4.")
+                    .foregroundStyle(.secondary)
+                if let issue = downloads.downloadIssue { Text(issue).foregroundStyle(.secondary) }
                 LabeledContent("Downloaded Songs", value: "\(downloads.songs.count)")
                 LabeledContent("Space Used", value: ByteCountFormatter.string(fromByteCount: downloads.totalBytes, countStyle: .file))
                 Button("Remove All Downloads", role: .destructive) { downloads.removeAll() }

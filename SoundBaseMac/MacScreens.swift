@@ -4,6 +4,11 @@ import SwiftUI
 
 struct MacHomeView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage(HomeLayout.recentPlaylistsKey) private var showRecentPlaylists = true
+    @AppStorage(HomeLayout.orderKey) private var sectionOrder = ""
+    @AppStorage(HomeLayout.hiddenSectionsKey) private var hiddenSections = ""
+    @AppStorage(HomeLayout.hiddenMixesKey) private var hiddenMixes = ""
+    @State private var editingHome = false
     @State private var recent: [Album] = []
     @State private var frequent: [Album] = []
     @State private var newest: [Album] = []
@@ -16,38 +21,101 @@ struct MacHomeView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 32) {
-                VStack(alignment: .leading, spacing: 10) {
-                    MacShelfHeader(title: "Made For You")
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 16) {
-                            MacMixTile(title: "Favourites Mix", subtitle: "Your starred songs", systemImage: "star.fill", colors: MacPalette.sets[0]) {
-                                Task { await model.playFavouritesMix() }
-                            }
-                            MacMixTile(title: "Discovery Mix", subtitle: "Deep cuts", systemImage: "sparkles", colors: MacPalette.sets[1]) {
-                                Task { await model.playDiscoveryMix() }
-                            }
-                            if let a = recent.first, let id = a.artistId, let name = a.artist {
-                                MacMixTile(title: "\(name) Station", subtitle: "Inspired by recent listening", systemImage: "dot.radiowaves.left.and.right", colors: MacPalette.sets[2]) {
-                                    Task { await model.playArtistStation(artistId: id, name: name) }
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 24)
-                    }
+                ForEach(visibleSections) { section in
+                    homeSection(section)
                 }
-                MacAlbumShelf(title: "Recently Played", albums: recent, route: .albums(title: "Recently Played", type: "recent"))
-                if let seed { MacArtistShelf(title: "You Might Also Like", subtitle: "Because you listened to \(seed)", artists: similar) }
-                MacAlbumShelf(title: "Recently Added", albums: newest, route: .albums(title: "Recently Added", type: "newest"))
-                MacAlbumShelf(title: "Most Played", albums: frequent, route: .albums(title: "Most Played", type: "frequent"))
-                MacAlbumShelf(title: "Favourite Albums", albums: starred, route: .albums(title: "Favourite Albums", type: "starred"))
-                MacAlbumShelf(title: "Rediscover", albums: rediscover, route: .albums(title: "Rediscover", type: "random"))
+                if visibleSections.isEmpty {
+                    ContentUnavailableView("Home is empty", systemImage: "rectangle.stack",
+                                           description: Text("Use Edit Home to show sections."))
+                }
                 if !loaded { ProgressView().frame(maxWidth: .infinity) }
             }
             .padding(.vertical, 24)
         }
         .navigationTitle("Home")
-        .toolbar { ToolbarItem { Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") } } }
+        .toolbar {
+            ToolbarItem { editHomeButton }
+            ToolbarItem { Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") } }
+        }
+        .sheet(isPresented: $editingHome) {
+            NavigationStack {
+                HomeLayoutSettings()
+                    .toolbar { Button("Done") { editingHome = false } }
+            }
+            .frame(width: 480, height: 580)
+        }
         .task { if !loaded { await load() } }
+    }
+
+    private var visibleSections: [HomeSection] {
+        HomeSection.order(from: sectionOrder).filter {
+            HomeLayout.isVisible($0.id, in: hiddenSections)
+                && ($0 != .recentPlaylists || (showRecentPlaylists && !model.recentPlaylists.isEmpty))
+                && ($0 != .mixes || HomeMix.available.contains(where: mixIsVisible))
+        }
+    }
+
+    private var editHomeButton: some View {
+        Button { editingHome = true } label: {
+            Label("Edit Home", systemImage: "slider.horizontal.3")
+        }
+    }
+
+    @ViewBuilder private func homeSection(_ section: HomeSection) -> some View {
+        switch section {
+        case .recentPlaylists:
+            RecentPlaylistCards(playlists: model.recentPlaylists)
+        case .mixes:
+            mixes
+        case .recent:
+            MacAlbumShelf(title: "Recently Played", albums: recent, route: .albums(title: "Recently Played", type: "recent"))
+        case .history:
+            NavigationLink(value: Route.history) {
+                Label("Listening History", systemImage: "clock.arrow.circlepath")
+            }
+            .padding(.horizontal, 24)
+        case .similar:
+            if let seed { MacArtistShelf(title: "You Might Also Like", subtitle: "Because you listened to \(seed)", artists: similar) }
+        case .newest:
+            MacAlbumShelf(title: "Recently Added", albums: newest, route: .albums(title: "Recently Added", type: "newest"))
+        case .frequent:
+            MacAlbumShelf(title: "Most Played", albums: frequent, route: .albums(title: "Most Played", type: "frequent"))
+        case .favourites:
+            MacAlbumShelf(title: "Favourite Albums", albums: starred, route: .albums(title: "Favourite Albums", type: "starred"))
+        case .rediscover:
+            MacAlbumShelf(title: "Rediscover", albums: rediscover, route: .albums(title: "Rediscover", type: "random"))
+        }
+    }
+
+    private func mixIsVisible(_ mix: HomeMix) -> Bool {
+        guard HomeLayout.isVisible(mix.id, in: hiddenMixes) else { return false }
+        return mix != .artistStation || (recent.first?.artistId != nil && recent.first?.artist != nil)
+    }
+
+    private var mixes: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MacShelfHeader(title: "Made For You")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    if mixIsVisible(.favourites) {
+                        MacMixTile(title: "Favourites Mix", subtitle: "Your starred songs", systemImage: "star.fill", colors: MacPalette.sets[0]) {
+                            model.router.go(.generated(.favourites))
+                        }
+                    }
+                    if mixIsVisible(.discovery) {
+                        MacMixTile(title: "Discovery Mix", subtitle: "Deep cuts", systemImage: "sparkles", colors: MacPalette.sets[1]) {
+                            model.router.go(.generated(.discovery))
+                        }
+                    }
+                    if mixIsVisible(.artistStation), let a = recent.first, let id = a.artistId, let name = a.artist {
+                        MacMixTile(title: "\(name) Station", subtitle: "Inspired by recent listening", systemImage: "dot.radiowaves.left.and.right", colors: MacPalette.sets[2]) {
+                            model.router.go(.generated(.artist(id: id, name: name)))
+                        }
+                    }
+                }
+                .padding(.horizontal, 24)
+            }
+        }
     }
 
     private func load() async {
@@ -130,11 +198,11 @@ struct MacRadioView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
                 HStack(spacing: 16) {
-                    MacMixTile(title: "Discovery Station", subtitle: "Endless music from your library", systemImage: "dot.radiowaves.left.and.right", colors: MacPalette.sets[1], width: nil, height: 170) {
-                        Task { await model.playDiscoveryMix() }
+                    MacMixTile(title: "Discovery Station", subtitle: "A mix from your library", systemImage: "dot.radiowaves.left.and.right", colors: MacPalette.sets[1], width: nil, height: 170) {
+                        model.router.go(.generated(.discoveryStation))
                     }
                     MacMixTile(title: "Favourites Station", subtitle: "Starred songs, shuffled", systemImage: "star.fill", colors: MacPalette.sets[0], width: nil, height: 170) {
-                        Task { await model.playFavouritesMix() }
+                        model.router.go(.generated(.favouritesStation))
                     }
                 }
                 .padding(.horizontal, 24)
@@ -144,7 +212,7 @@ struct MacRadioView: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 14)], spacing: 14) {
                             ForEach(genres.prefix(20)) { g in
                                 MacMixTile(title: g.value, subtitle: "Station", systemImage: "dot.radiowaves.left.and.right", colors: MacPalette.stable(g.value), width: nil, height: 90) {
-                                    Task { await model.playGenreStation(g.value) }
+                                    model.router.go(.generated(.genre(g.value)))
                                 }
                             }
                         }
@@ -155,7 +223,7 @@ struct MacRadioView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         MacShelfHeader(title: "Internet Radio")
                         ForEach(stations) { s in
-                            Button { model.player.playRadio(s) } label: {
+                            Button { model.router.go(.radio(s)) } label: {
                                 Label(s.name, systemImage: "antenna.radiowaves.left.and.right").padding(.vertical, 4)
                             }
                             .buttonStyle(.plain)
@@ -182,39 +250,96 @@ struct MacSearchView: View {
     let query: String
     @Environment(AppModel.self) private var model
     @State private var results: SearchResult?
+    @State private var loading = false
+    @State private var failed = false
+    @State private var attempt = 0
 
     var body: some View {
         ScrollView {
-            if let r = results {
+            if let results {
                 VStack(alignment: .leading, spacing: 28) {
-                    MacArtistShelf(title: "Artists", artists: r.artist ?? [])
-                    MacAlbumShelf(title: "Albums", albums: r.album ?? [])
-                    if let songs = r.song, !songs.isEmpty {
+                    MacArtistShelf(title: "Artists", artists: results.artist ?? [], route: route(.artists))
+                    MacAlbumShelf(title: "Albums", albums: results.album ?? [], route: route(.albums))
+                    if let songs = results.song, !songs.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            MacShelfHeader(title: "Songs")
-                            MacSongTable(songs: songs)
-                                .frame(height: min(CGFloat(songs.count) * 28 + 32, 520))
+                            MacShelfHeader(title: "Songs", route: route(.songs))
+                            MacSongTable(songs: Array(songs.prefix(8)), playSingle: true)
+                                .frame(height: CGFloat(min(songs.count, 8)) * 28 + 34)
                                 .padding(.horizontal, 24)
                         }
                     }
-                    if (r.artist ?? []).isEmpty && (r.album ?? []).isEmpty && (r.song ?? []).isEmpty {
+                    if (results.artist ?? []).isEmpty && (results.album ?? []).isEmpty && (results.song ?? []).isEmpty {
                         ContentUnavailableView.search(text: query)
                     }
                 }
                 .padding(.vertical, 24)
+            } else if failed {
+                ContentUnavailableView {
+                    Label("Couldn’t Search", systemImage: "exclamationmark.circle")
+                } actions: {
+                    Button("Retry") { attempt += 1 }
+                }
+            } else if loading {
+                ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
             } else {
-                ContentUnavailableView("Search Your Library", systemImage: "magnifyingglass", description: Text("Find artists, albums and songs."))
-                    .padding(.top, 80)
+                ContentUnavailableView("Search Your Library", systemImage: "magnifyingglass",
+                                       description: Text("Find artists, albums and songs."))
             }
         }
         .navigationTitle("Search")
-        .task(id: query) {
-            let q = query.trimmingCharacters(in: .whitespaces)
-            guard !q.isEmpty else { results = nil; return }
-            try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled else { return }
-            results = try? await model.client?.search(q, artists: 12, albums: 20, songs: 50)
+        .task(id: SearchRequest(query: query, attempt: attempt)) {
+            results = nil
+            failed = false
+            let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !q.isEmpty, let client = model.client else { loading = false; return }
+            loading = true
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+                let response = try await client.search(q)
+                try Task.checkCancellation()
+                results = response
+                loading = false
+            } catch {
+                guard !Task.isCancelled else { return }
+                failed = true
+                loading = false
+            }
         }
+    }
+
+    private func route(_ category: SearchCategory) -> Route {
+        .searchResults(query.trimmingCharacters(in: .whitespacesAndNewlines), category)
+    }
+}
+
+struct MacSearchCategoryView: View {
+    let query: String
+    let category: SearchCategory
+    @Environment(AppModel.self) private var model
+    @State private var page = SearchPage()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            switch category {
+            case .songs:
+                if let songs = page.results.song, !songs.isEmpty {
+                    MacSongTable(songs: songs, playSingle: true)
+                }
+            case .albums:
+                ScrollView { MacAlbumGrid(albums: page.results.album ?? []).padding(.vertical) }
+            case .artists:
+                List(page.results.artist ?? []) { artist in
+                    NavigationLink(value: Route.artist(artist.id)) { Label(artist.name, systemImage: "music.mic") }
+                }
+            }
+            SearchPageFooter(page: page, load: load).padding()
+        }
+        .navigationTitle(category.rawValue)
+        .task { if page.hasMore && page.results.song == nil && page.results.album == nil && page.results.artist == nil { await load() } }
+    }
+
+    private func load() async {
+        await page.load(query: query, category: category, client: model.client)
     }
 }
 
@@ -355,8 +480,8 @@ struct MacGenreView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                MacMixTile(title: "\(genre) Station", subtitle: "Play", systemImage: "dot.radiowaves.left.and.right", colors: MacPalette.stable(genre), width: 320, height: 110) {
-                    Task { await model.playGenreStation(genre) }
+                MacMixTile(title: "\(genre) Station", subtitle: "Station", systemImage: "dot.radiowaves.left.and.right", colors: MacPalette.stable(genre), width: 320, height: 110) {
+                    model.router.go(.generated(.genre(genre)))
                 }
                 .padding(.horizontal, 24)
                 MacAlbumGrid(albums: albums)
@@ -398,29 +523,99 @@ struct MacLovedView: View {
 
 struct MacDownloadsView: View {
     @Environment(DownloadManager.self) private var downloads
+    @State private var category: DownloadCategory = .albums
+    @State private var query = ""
 
     var body: some View {
-        let songs = downloads.sortedSongs
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                MacPlayShuffle(songs: songs)
-                Spacer()
-                if !downloads.inProgress.isEmpty {
-                    ProgressView().controlSize(.small)
-                    Text("Downloading \(downloads.inProgress.count)…").foregroundStyle(.secondary)
+                Picker("Downloads", selection: $category) {
+                    ForEach(DownloadCategory.allCases) { Text($0.rawValue).tag($0) }
                 }
-                Text("\(songs.count) songs · \(ByteCountFormatter.string(fromByteCount: downloads.totalBytes, countStyle: .file))")
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                TextField("Find downloaded music", text: $query)
+                    .textFieldStyle(.roundedBorder)
+                Spacer()
+                if !downloads.inProgress.isEmpty { ProgressView().controlSize(.small) }
+                Text(ByteCountFormatter.string(fromByteCount: downloads.totalBytes, countStyle: .file))
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
-            if songs.isEmpty {
-                ContentUnavailableView("No Downloads", systemImage: "arrow.down.circle", description: Text("Right-click albums or songs and choose Download to listen offline."))
-            } else {
-                MacSongTable(songs: songs) { offsets in offsets.map { songs[$0].id }.forEach(downloads.remove) }
+
+            if let issue = downloads.downloadIssue {
+                Label(issue, systemImage: "exclamationmark.circle")
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
+            }
+
+            switch category {
+            case .albums:
+                let albums = downloads.albums.filter { $0.tracks.contains { $0.matchesDownloadSearch(query) } }
+                if albums.isEmpty { emptyState("Albums") }
+                else {
+                    List(albums) { album in
+                        let name = album.tracks.first?.album ?? "Unknown Album"
+                        NavigationLink {
+                            MacOfflineTracksView(title: name, tracks: album.tracks)
+                        } label: {
+                            Label(name, systemImage: "square.stack")
+                        }
+                    }
+                }
+            case .playlists:
+                let playlists = downloads.playlists.filter { playlist in
+                    query.isEmpty || playlist.name.localizedStandardContains(query)
+                        || playlist.tracks.contains { $0.matchesDownloadSearch(query) }
+                }
+                if playlists.isEmpty { emptyState("Playlists") }
+                else {
+                    List(playlists) { playlist in
+                        NavigationLink {
+                            MacOfflineTracksView(title: playlist.name, tracks: playlist.tracks, playlist: playlist)
+                        } label: {
+                            Label(playlist.name, systemImage: "music.note.list")
+                        }
+                    }
+                }
+            case .songs:
+                let songs = downloads.sortedSongs.filter { $0.matchesDownloadSearch(query) }
+                if songs.isEmpty { emptyState("Songs") }
+                else {
+                    MacPlayShuffle(songs: songs).padding(.horizontal, 20)
+                    MacSongTable(songs: songs) { offsets in
+                        for offset in offsets { downloads.remove(songs[offset].id) }
+                    }
+                }
             }
         }
         .navigationTitle("Downloaded")
+    }
+
+    private func emptyState(_ title: String) -> some View {
+        ContentUnavailableView(query.isEmpty ? "No Downloaded \(title)" : "No Matching \(title)",
+                               systemImage: "arrow.down.circle")
+    }
+}
+
+struct MacOfflineTracksView: View {
+    let title: String
+    let tracks: [Song]
+    var playlist: DownloadedPlaylist? = nil
+    @Environment(DownloadManager.self) private var downloads
+
+    var body: some View {
+        let available = tracks.filter { downloads.isDownloaded($0.id) }
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
+                if let playlist { OfflinePlaylistActions(playlist: playlist) }
+                MacPlayShuffle(songs: available)
+            }
+            .padding()
+            MacSongTable(songs: available)
+        }
+        .navigationTitle(title)
     }
 }
 
@@ -575,7 +770,7 @@ struct MacArtistView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     MacDetailHeader(artworkID: artist.artworkID, circle: true, kind: "Artist", title: artist.name, subtitle: nil,
                                     meta: "\(albums.count) albums", songs: top) {
-                        Button { Task { await model.playArtistStation(artistId: artist.id, name: artist.name) } } label: {
+                        Button { model.router.go(.generated(.artist(id: artist.id, name: artist.name))) } label: {
                             Label("Station", systemImage: "dot.radiowaves.left.and.right")
                         }
                         .controlSize(.large)
@@ -634,7 +829,7 @@ struct MacPlaylistView: View {
                 MacDetailHeader(artworkID: playlist.coverArt, kind: "Playlist", title: playlist.name, subtitle: playlist.owner,
                                 meta: "\(songs.count) songs · \(songs.totalDuration / 60) min", songs: songs) {
                     Menu {
-                        Button("Download") { model.downloads.download(songs) }
+                        Button("Download") { model.downloads.downloadPlaylist(playlist.downloadedCopy) }
                         Button("Play Next") { model.player.playNext(songs) }
                         Divider()
                         Button("Delete Playlist", role: .destructive) { confirmDelete = true }
@@ -661,7 +856,13 @@ struct MacPlaylistView: View {
                 }
             }
         }
-        .task(id: id) { await load() }
+        .task(id: id) {
+            guard let client = model.client,
+                  let opened = try? await client.playlist(id),
+                  !Task.isCancelled else { return }
+            playlist = opened
+            model.recordPlaylistOpen(id, using: client)
+        }
     }
 
     private func load() async { playlist = try? await model.client?.playlist(id) }
@@ -711,5 +912,50 @@ struct MacPlaylistPicker: View {
     private func close() {
         router.playlistPickerSongs = nil
         dismiss()
+    }
+}
+
+struct MacGeneratedPlaylistView: View {
+    let playlist: GeneratedPlaylist
+
+    var body: some View {
+        GeneratedPlaylistContent(playlist: playlist) { songs in
+            VStack(alignment: .leading, spacing: 0) {
+                MacDetailHeader(artworkID: songs.first?.coverArt, kind: playlist.kind,
+                                title: playlist.title, subtitle: nil, meta: "\(songs.count) tracks", songs: songs) {
+                    SaveMixButton(title: playlist.title, songs: songs)
+                }
+                MacSongTable(songs: songs)
+            }
+        }
+    }
+}
+
+struct MacListeningHistoryView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(Player.self) private var player
+
+    var body: some View {
+        if player.listeningHistory.isEmpty {
+            ContentUnavailableView("No Listening History", systemImage: "clock.arrow.circlepath",
+                                   description: Text("Tracks you play on this device appear here."))
+                .navigationTitle("Listening History")
+        } else {
+            List(player.listeningHistory) { entry in
+                HStack {
+                    Button { model.playFromLibrary([entry.song]) } label: {
+                        Label(entry.song.title, systemImage: "play.fill")
+                    }
+                    .buttonStyle(.plain)
+                    if let artist = entry.song.artist { Text(artist).foregroundStyle(.secondary) }
+                    Spacer()
+                    Text(entry.playedAt, format: .dateTime.day().month().hour().minute())
+                        .foregroundStyle(.secondary)
+                    QueueTrackButton(song: entry.song)
+                }
+                .contextMenu { MacSongMenu(songs: [entry.song]) }
+            }
+            .navigationTitle("Listening History")
+        }
     }
 }

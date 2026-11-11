@@ -235,3 +235,53 @@ func formatTime(_ seconds: Double) -> String {
     let s = Int(seconds)
     return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
 }
+
+struct DownloadedPlaylist: Codable, Identifiable {
+    let id: String
+    let name: String
+    let tracks: [Song]
+
+    var trackIDs: Set<String> { Set(tracks.map(\.id)) }
+}
+
+struct DownloadedPlaylistIndex: Codable {
+    var playlists: [String: DownloadedPlaylist] = [:]
+    var standaloneIDs: Set<String> = []
+
+    func retains(_ id: String) -> Bool {
+        standaloneIDs.contains(id) || playlists.values.contains { playlist in
+            playlist.tracks.contains { $0.id == id }
+        }
+    }
+
+    static func load(from url: URL, existingIDs: Dictionary<String, Song>.Keys) -> Self {
+        if let data = try? Data(contentsOf: url), let index = try? JSONDecoder().decode(Self.self, from: data) {
+            return index
+        }
+        return Self(standaloneIDs: Set(existingIDs))
+    }
+
+    func save(to url: URL) {
+        if let data = try? JSONEncoder().encode(self) { try? data.write(to: url, options: .atomic) }
+    }
+}
+
+extension Song {
+    var offlineAlbumKey: String {
+        if let albumId, !albumId.isEmpty { return "id:\(albumId)" }
+        if let coverArt, !coverArt.isEmpty { return "cover:\(album ?? ""):\(coverArt)" }
+        return "album:\(album ?? ""):\(artist ?? "")"
+    }
+
+    func matchesDownloadSearch(_ query: String) -> Bool {
+        query.split(whereSeparator: \.isWhitespace).allSatisfy { word in
+            [title, artist, album].compactMap { $0 }.contains { $0.localizedStandardContains(String(word)) }
+        }
+    }
+}
+
+extension PlaylistDetail {
+    var downloadedCopy: DownloadedPlaylist {
+        DownloadedPlaylist(id: id, name: name, tracks: entry ?? [])
+    }
+}

@@ -40,8 +40,8 @@ struct AlbumView: View {
                     .padding(.top, 4)
 
                     PlayShuffleButtons(
-                        play: { model.player.play(songs) },
-                        shuffle: { model.player.play(songs, shuffled: true) })
+                        play: { model.playFromLibrary(songs) },
+                        shuffle: { model.playFromLibrary(songs, shuffled: true) })
                         .padding(.horizontal)
                         .padding(.vertical, 18)
 
@@ -87,9 +87,9 @@ struct AlbumView: View {
                         Button { model.downloads.download(songs) } label: { Label("Download", systemImage: "arrow.down.circle") }
                         Button { router.playlistPickerSongs = songs } label: { Label("Add to Playlist…", systemImage: "text.badge.plus") }
                         Button { model.player.playNext(songs) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
-                        Button { model.player.playLast(songs) } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
+                        Button { model.player.addToQueue(songs) } label: { Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") }
                         if let artistId = album.artistId, let name = album.artist {
-                            Button { Task { await model.playArtistStation(artistId: artistId, name: name) } } label: {
+                            Button { model.router.go(.generated(.artist(id: artistId, name: name))) } label: {
                                 Label("Create Station", systemImage: "dot.radiowaves.left.and.right")
                             }
                         }
@@ -113,7 +113,7 @@ struct AlbumView: View {
                 }
                 SongRow(song: song, number: song.track ?? i + 1,
                         subtitle: song.artist != album?.artist ? song.artist : nil) {
-                    model.player.play(songs, startAt: i)
+                    model.playFromLibrary(songs, startAt: i)
                 }
                 .padding(.horizontal)
                 Divider().padding(.leading, 54)
@@ -155,7 +155,7 @@ struct ArtistView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             ShelfHeader(title: "Top Songs")
                             ForEach(Array(top.prefix(showAllTop ? 20 : 5).enumerated()), id: \.element.id) { i, song in
-                                SongRow(song: song, subtitle: song.album) { model.player.play(top, startAt: i) }
+                                SongRow(song: song, subtitle: song.album) { model.playFromLibrary(top, startAt: i) }
                                     .padding(.horizontal)
                             }
                             if top.count > 5 {
@@ -211,7 +211,7 @@ struct ArtistView: View {
                         Image(systemName: model.isLoved(artist.id) ? "star.fill" : "star")
                     }
                     Menu {
-                        Button { Task { await model.playArtistStation(artistId: artist.id, name: artist.name) } } label: {
+                        Button { model.router.go(.generated(.artist(id: artist.id, name: artist.name))) } label: {
                             Label("Create Station", systemImage: "dot.radiowaves.left.and.right")
                         }
                         Button { Task { await shuffleAll(artist) } } label: { Label("Shuffle All", systemImage: "shuffle") }
@@ -233,7 +233,7 @@ struct ArtistView: View {
                 Text(artist.name).font(.largeTitle.bold()).foregroundStyle(.white).lineLimit(2)
                 Spacer()
                 Button {
-                    if top.isEmpty { Task { await shuffleAll(artist) } } else { model.player.play(top) }
+                    if top.isEmpty { Task { await shuffleAll(artist) } } else { model.playFromLibrary(top) }
                 } label: {
                     Image(systemName: "play.fill")
                         .font(.title2)
@@ -251,7 +251,7 @@ struct ArtistView: View {
         guard let client = model.client else { return }
         var songs: [Song] = []
         for album in artist.album ?? [] { songs += (try? await client.album(album.id))?.song ?? [] }
-        model.player.play(songs, shuffled: true)
+        model.playFromLibrary(songs, shuffled: true)
     }
 
     private func load() async {
@@ -286,14 +286,14 @@ struct PlaylistView: View {
                     if let comment = playlist.comment, !comment.isEmpty {
                         Text(comment).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }
-                    PlayShuffleButtons(play: { model.player.play(songs) }, shuffle: { model.player.play(songs, shuffled: true) })
+                    PlayShuffleButtons(play: { model.playFromLibrary(songs) }, shuffle: { model.playFromLibrary(songs, shuffled: true) })
                         .padding(.top, 6)
                 }
                 .frame(maxWidth: .infinity)
                 .listRowSeparator(.hidden)
 
                 ForEach(Array(songs.enumerated()), id: \.offset) { i, song in
-                    SongRow(song: song) { model.player.play(songs, startAt: i) }
+                    SongRow(song: song) { model.playFromLibrary(songs, startAt: i) }
                 }
                 .onDelete { offsets in
                     Task {
@@ -313,7 +313,7 @@ struct PlaylistView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             Menu {
-                Button { model.downloads.download(playlist?.entry ?? []) } label: { Label("Download", systemImage: "arrow.down.circle") }
+                Button { if let playlist { model.downloads.downloadPlaylist(playlist.downloadedCopy) } } label: { Label("Download", systemImage: "arrow.down.circle") }
                 Button { model.player.playNext(playlist?.entry ?? []) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
                 Button(role: .destructive) { confirmDelete = true } label: { Label("Delete Playlist", systemImage: "trash") }
             } label: { Image(systemName: "ellipsis") }
@@ -328,7 +328,13 @@ struct PlaylistView: View {
             }
         }
         .refreshable { await load() }
-        .task(id: id) { await load() }
+        .task(id: id) {
+            guard let client = model.client,
+                  let opened = try? await client.playlist(id),
+                  !Task.isCancelled else { return }
+            playlist = opened
+            model.recordPlaylistOpen(id, using: client)
+        }
     }
 
     private func load() async {
@@ -346,8 +352,8 @@ struct GenreView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                MixTile(title: "\(genre) Station", subtitle: "Play", systemImage: "dot.radiowaves.left.and.right", colors: Palette.stable(genre), width: nil, height: 120) {
-                    Task { await model.playGenreStation(genre) }
+                MixTile(title: "\(genre) Station", subtitle: "Station", systemImage: "dot.radiowaves.left.and.right", colors: Palette.stable(genre), width: nil, height: 120) {
+                    model.router.go(.generated(.genre(genre)))
                 }
                 .padding(.horizontal)
                 AlbumGrid(albums: albums)
@@ -377,5 +383,42 @@ struct AlbumGrid: View {
             }
         }
         .padding(.horizontal)
+    }
+}
+
+struct GeneratedPlaylistView: View {
+    let playlist: GeneratedPlaylist
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        GeneratedPlaylistContent(playlist: playlist) { songs in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 16) {
+                            Artwork(id: songs.first?.coverArt, size: 400, corner: 12)
+                                .frame(width: 96, height: 96)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Label(playlist.kind, systemImage: playlist.icon)
+                                    .font(.headline)
+                                Text("\(songs.count) tracks")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        PlayShuffleButtons(
+                            play: { model.playFromLibrary(songs) },
+                            shuffle: { model.playFromLibrary(songs, shuffled: true) }
+                        )
+                        SaveMixButton(title: playlist.title, songs: songs)
+                    }
+                    .padding(.bottom, 12)
+
+                    ForEach(Array(songs.enumerated()), id: \.element.id) { i, song in
+                        SongRow(song: song) { model.playFromLibrary(songs, startAt: i) }
+                    }
+                }
+                .padding()
+            }
+        }
     }
 }

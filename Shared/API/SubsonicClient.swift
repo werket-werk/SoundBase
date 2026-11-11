@@ -6,6 +6,32 @@ struct ServerCredentials: Codable, Equatable, Sendable {
     var username: String
     var salt: String
     var token: String
+
+    var libraryKey: String {
+        let identity = Data((url.absoluteString + "\n" + username).utf8)
+        return SHA256.hash(data: identity).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func downloadDirectory(in root: URL) -> URL {
+        let folder = root.appendingPathComponent(libraryKey, isDirectory: true)
+        let files = FileManager.default
+        try? files.createDirectory(at: folder, withIntermediateDirectories: true)
+        // The first account after an upgrade claims the former single-account cache.
+        let owner = root.appendingPathComponent("legacy-owner")
+        if !files.fileExists(atPath: owner.path) {
+            try? libraryKey.write(to: owner, atomically: true, encoding: .utf8)
+        }
+        if (try? String(contentsOf: owner, encoding: .utf8)) == libraryKey,
+           let entries = try? files.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isRegularFileKey]) {
+            for entry in entries where entry != owner
+                && (try? entry.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                let destination = folder.appendingPathComponent(entry.lastPathComponent)
+                if !files.fileExists(atPath: destination.path) { try? files.moveItem(at: entry, to: destination) }
+            }
+        }
+        return folder
+    }
+
 }
 
 enum SubsonicFailure: LocalizedError {
@@ -69,8 +95,20 @@ final class SubsonicClient: Sendable {
     // MARK: Transport
 
     @discardableResult
-    func call(_ endpoint: String, _ params: [(String, String)] = []) async throws -> Payload {
-        let (data, response) = try await URLSession.shared.data(from: url(endpoint, params))
+    func call(_ endpoint: String, _ params: [(String, String)] = [], formPost: Bool = false) async throws -> Payload {
+        let endpointURL = url(endpoint, params)
+        var request = URLRequest(url: endpointURL)
+        if formPost, var components = URLComponents(url: endpointURL, resolvingAgainstBaseURL: false),
+           let query = components.percentEncodedQuery {
+            components.query = nil
+            if let destination = components.url {
+                request.url = destination
+                request.httpMethod = "POST"
+                request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                request.httpBody = Data(query.utf8)
+            }
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw SubsonicFailure.http(http.statusCode)
         }
@@ -122,10 +160,12 @@ final class SubsonicClient: Sendable {
         (try await call("getGenres").genres?.genre ?? []).sorted { ($0.songCount ?? 0) > ($1.songCount ?? 0) }
     }
 
-    func search(_ query: String, artists: Int = 8, albums: Int = 12, songs: Int = 25, songOffset: Int = 0) async throws -> SearchResult {
+    func search(_ query: String, artists: Int = 8, albums: Int = 12, songs: Int = 25,
+                artistOffset: Int = 0, albumOffset: Int = 0, songOffset: Int = 0) async throws -> SearchResult {
         try await call("search3", [
             ("query", query), ("artistCount", "\(artists)"), ("albumCount", "\(albums)"),
             ("songCount", "\(songs)"), ("songOffset", "\(songOffset)"),
+            ("artistOffset", "\(artistOffset)"), ("albumOffset", "\(albumOffset)"),
         ]).searchResult3 ?? SearchResult()
     }
 
@@ -146,7 +186,9 @@ final class SubsonicClient: Sendable {
     func playlists() async throws -> [Playlist] { try await call("getPlaylists").playlists?.playlist ?? [] }
     func playlist(_ id: String) async throws -> PlaylistDetail? { try await call("getPlaylist", [("id", id)]).playlist }
     func createPlaylist(name: String, songIds: [String]) async throws {
-        try await call("createPlaylist", [("name", name)] + songIds.map { ("songId", $0) })
+        let parameters = [("name", name)] + songIds.map { ("songId", $0) }
+        let needsForm = url("createPlaylist", parameters).absoluteString.utf8.count > 1_900
+        try await call("createPlaylist", parameters, formPost: needsForm)
     }
     func addToPlaylist(_ id: String, songIds: [String]) async throws {
         try await call("updatePlaylist", [("playlistId", id)] + songIds.map { ("songIdToAdd", $0) })
