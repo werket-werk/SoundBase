@@ -98,7 +98,7 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.werket.soundbase.watchkitapp.complication
+        PRODUCT_BUNDLE_IDENTIFIER: com.werket.soundbase.watchkitapp.nowplayingwidget
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
   SoundBaseMac:

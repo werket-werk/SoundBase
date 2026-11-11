@@ -623,7 +623,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.werket.soundbase.watchkitapp.complication;
+				PRODUCT_BUNDLE_IDENTIFIER = com.werket.soundbase.watchkitapp.nowplayingwidget;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = 4;
@@ -789,7 +789,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.werket.soundbase.watchkitapp.complication;
+				PRODUCT_BUNDLE_IDENTIFIER = com.werket.soundbase.watchkitapp.nowplayingwidget;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = 4;
