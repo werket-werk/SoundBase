@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library editing setup — SoundBase</title>
+<meta name="description" content="Install the SoundBase Navidrome helper, configure artwork and recover files for 30 days.">
+<meta property="og:title" content="Library editing setup — SoundBase">
+<meta property="og:description" content="Install the SoundBase Navidrome helper, configure artwork and recover files for 30 days.">
+<meta property="og:image" content="assets/icon.png">
+<link rel="icon" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/icon.png">
+<link rel="stylesheet" href="assets/style.css?v=e8a472062307">
+</head>
+<body>
+<header class="nav"><div class="wrap">
+  <a class="brand" href="index.html"><img src="assets/icon.png" alt="">SoundBase</a>
+  <nav class="links">
+    <a href="index.html#features" class="hide-sm">Features</a>
+    <a href="index.html#screenshots" class="hide-sm">Screenshots</a>
+    <a href="support.html">Support</a>
+    <a href="privacy.html">Privacy</a>
+    <a href="https://github.com/werket-werk/SoundBase">GitHub</a>
+  </nav>
+</div></header>
+<main>
+
+<article class="doc"><div class="wrap">
+<h1>Library editing setup</h1>
+<p class="updated">Updated 11 November 2026</p>
+<p>Use SoundBase on iPhone or Mac to edit track, album and artist tags, choose or create genres, replace artwork, rename audio files and remove music from your library. Editing requires a SoundBase build with the library editor, a Navidrome administrator account, and the helper installed on your music server.</p>
+<p>The helper writes changes to your music files and asks Navidrome to scan them. Removed files and originals from metadata edits go into a recovery folder. Completed recovery operations are permanently deleted after <strong>30 days</strong>.</p>
+<nav aria-label="On this page"><a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#proxy">HTTPS proxy</a> · <a href="#artwork">Artwork</a> · <a href="#verify">Check setup</a> · <a href="#recovery">Recovery</a> · <a href="#troubleshooting">Troubleshooting</a></nav>
+
+<h2 id="requirements">Before you start</h2>
+<ul>
+<li>Use a Navidrome version with real-path reporting. The helper has been tested with Navidrome 0.64.2.</li>
+<li>Give the helper’s service account write access to the music files and parent directories. Navidrome can keep its music mount read-only.</li>
+<li>Keep the recovery folder outside every scanned music folder, on the <strong>same filesystem</strong> as the music. Create it before starting a Docker container and give its configured UID/GID write access.</li>
+<li>Use an HTTPS server address in SoundBase. The proxy forwards the helper route on that same address.</li>
+<li>Set <code>ND_SUBSONIC_DEFAULTREPORTREALPATH=true</code> before the helper first connects. If the helper has already connected, enable <strong>Report Real Path</strong> on its SoundBase player entry in Navidrome. Look for the entry with a Python user agent.</li>
+</ul>
+<p>The helper manages one music root. For multiple libraries, keep the configured root scoped to the library you intend to edit. Docker paths must match the absolute paths reported by Navidrome, such as <code>/music</code>.</p>
+
+<h2 id="install">Install the helper</h2>
+<p>Download the <a href="https://github.com/werket-werk/SoundBase/tree/main/server/library">helper source and deployment examples</a>. On a Linux host with Python 3.11 or newer, install it under a directory such as <code>/opt/soundbase-library</code>. Replace the example paths with your actual storage paths.</p>
+<pre><code>git clone https://github.com/werket-werk/SoundBase.git
+cd SoundBase/server/library
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python manager.py \
+  --navidrome http://127.0.0.1:4533 \
+  --music /srv/music \
+  --recovery /srv/soundbase-recovery \
+  --recovery-days 30</code></pre>
+<p>For Navidrome with a base path, include it in <code>--navidrome</code>, for example <code>http://127.0.0.1:4533/music</code>. The helper listens on loopback by default.</p>
+<details><summary>Run automatically with systemd</summary>
+<p>Place the helper files and virtual environment in <code>/opt/soundbase-library</code>. Replace <code>music</code> with the account that owns your files and edit the paths below. Save this as <code>/etc/systemd/system/soundbase-library.service</code>.</p>
+<pre><code>[Unit]
+Description=SoundBase library helper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=music
+Group=music
+WorkingDirectory=/opt/soundbase-library
+ExecStart=/opt/soundbase-library/.venv/bin/python /opt/soundbase-library/manager.py --music /srv/music --recovery /srv/soundbase-recovery --recovery-days 30
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+<pre><code>sudo systemctl enable --now soundbase-library
+systemctl status soundbase-library</code></pre>
+</details>
+<details><summary>Run with Docker Compose</summary>
+<p>Use <code>Dockerfile</code> and <code>compose.example.yml</code> from the helper directory. Edit the music and recovery mounts, the container UID/GID, and the external network name to match your server. Put Navidrome, the helper and the HTTPS proxy on that network.</p>
+<pre><code>docker compose -f compose.example.yml up -d --build
+docker compose -f compose.example.yml logs soundbase-library</code></pre>
+<p>The example binds inside the container and publishes no host port. Point the proxy at <code>http://soundbase-library:4534</code>. The Navidrome URL becomes <code>http://navidrome:4533</code> when that is its container name.</p>
+</details>
+
+<h2 id="proxy">Add the HTTPS proxy route</h2>
+<p>Add this location to the existing HTTPS virtual host for your music server. Keep its existing Navidrome route.</p>
+<pre><code>location /soundbase-library/v1/ {
+    proxy_pass http://127.0.0.1:4534;
+    client_max_body_size 3m;
+    proxy_read_timeout 300s;
+}</code></pre>
+<p>For a Docker proxy, use <code>proxy_pass http://soundbase-library:4534;</code>. In Nginx Proxy Manager, add the location in the music host’s <strong>Advanced</strong> configuration.</p>
+<p>If your public server address has a base path such as <code>/music</code>, match <code>/music/soundbase-library/v1/</code> and use <code>proxy_pass http://127.0.0.1:4534/soundbase-library/v1/;</code> so the helper receives the route without the base path.</p>
+<p>The helper checks the existing SoundBase login against Navidrome on every request and requires administrator privileges. Keep request bodies out of proxy logs because they contain Subsonic authentication tokens. Test the proxy configuration before reloading it.</p>
+
+<h2 id="artwork">Configure artwork</h2>
+<p>For tracks and albums, import an image or preview and select a release from MusicBrainz and the Cover Art Archive. The helper embeds the cover in FLAC, MP3 or M4A files. Other metadata edits use the tag formats supported by Mutagen.</p>
+<p>If existing folder images take precedence over your replacement, put <code>embedded</code> first in Navidrome’s <code>CoverArtPriority</code>. To show one album cover across discs, you can also set <code>DiscArtPriority=""</code>. These settings affect artwork selection throughout the library.</p>
+<p>For artist images, create a writable image directory on the recovery filesystem, pass it as <code>--artist-images /srv/artist-images</code>, and configure Navidrome with the same directory.</p>
+<pre><code>ArtistImageFolder = "/srv/artist-images"
+ArtistArtPriority = "image-folder,artist.*,album/artist.*,external"</code></pre>
+<p>For Docker, mount that folder into both containers and use each container’s matching path. Existing artist images uploaded through Navidrome may take precedence. Use Navidrome’s <strong>Refresh Metadata</strong> action if cached artwork persists. See <a href="https://www.navidrome.org/docs/usage/library/artwork/">Navidrome’s artwork documentation</a>.</p>
+<p>Artwork searches send the album and artist names to MusicBrainz. Cover previews and downloads contact the Cover Art Archive and its image hosts. Imported images are uploaded to your own helper.</p>
+
+<h2 id="verify">Check the setup</h2>
+<ol>
+<li>Check the helper’s service or Docker logs for startup errors.</li>
+<li>Reopen a SoundBase build that includes editing and sign in as a Navidrome administrator using your HTTPS address.</li>
+<li>Open a track, album or artist menu and choose <strong>Edit</strong>.</li>
+<li>Change a test track’s genre, save, and wait for Navidrome’s scan. Confirm the change in SoundBase and Navidrome.</li>
+<li>Check that the recovery folder contains the original file and a <code>.soundbase-completed</code> marker inside the operation directory.</li>
+</ol>
+
+<h2 id="recovery">Recover files within 30 days</h2>
+<p>Track removal moves that track. Album removal moves its indexed tracks. Artist removal moves tracks from albums credited solely to that album artist. Metadata edits preserve originals under <code>&lt;kind&gt;-edit-*/originals/</code>. Removal preserves relative paths under <code>removed-&lt;kind&gt;-*/</code>.</p>
+<p>To undo a removal or metadata edit, copy the recovered file back to its original relative path under the music root and scan in Navidrome. Restore an artist image from <code>original-artist.jpg</code> to its configured image path. A filename rename keeps the audio in its existing folder and can be undone by renaming it again.</p>
+<p>The helper checks completed operations at startup and hourly while running. After 30 days, it permanently deletes the whole recovery operation, including original files. Use <code>--recovery-days N</code> to change retention, or <code>--recovery-days 0</code> for indefinite retention. Operations from older helper versions without completion markers and manually added folders are left for the administrator to review.</p>
+<p>Navidrome normally keeps missing records, including ratings and playlist references, after files move out of the library. Administrators may still see those records until they remove them under <strong>Settings → Missing Files</strong>. <code>Scanner.PurgeMissing="always"</code> clears every missing record after each scan, so review its library-wide effect before enabling it. See <a href="https://navidrome.org/docs/usage/library/missing-files/">Navidrome’s missing files guide</a>.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<details><summary>The Edit menu is missing</summary><p>Check that the installed SoundBase build includes editing, the account is a Navidrome administrator, the address uses HTTPS, and the proxy forwards <code>/soundbase-library/v1/</code>. Reopen the app after changing the helper setup.</p></details>
+<details><summary>The helper asks for real paths</summary><p>Enable Report Real Path on the SoundBase player entry created by the helper. Check that the helper can access the exact path returned for the track. Container paths and host paths can differ.</p></details>
+<details><summary>A permission or filesystem error appears</summary><p>Check ownership, write access, available storage, and that music, recovery and the optional artist image directory share a filesystem. The helper uses hard links to preserve originals. Test support on your NAS with disposable files.</p></details>
+<details><summary>A tag or artist name did not change</summary><p>Artist renaming replaces exact Artist and Album Artist tag values, including plural variants. Combined credits stored in one value are preserved. Check the raw tags in Navidrome and choose the affected track for a direct edit.</p></details>
+<details><summary>Artwork search is unavailable</summary><p>MusicBrainz and the Cover Art Archive can return rate limits, missing covers or network errors. Wait and retry, or choose an image file.</p></details>
+<p><a href="support.html">Back to SoundBase support</a></p>
+</div></article>
+
+</main>
+<footer><div class="wrap">
+  <span>© 2026 SoundBase. Free and open source under the MIT License.</span>
+  <span class="links"><a href="privacy.html">Privacy Policy</a><a href="terms.html">Terms of Use</a><a href="support.html">Support</a><a href="library-setup.html">Library setup</a><a href="https://github.com/werket-werk/SoundBase">Source Code</a></span>
+  <span class="fine">SoundBase is an independent project and is not affiliated with or endorsed by Navidrome, Subsonic, Apple or Google. Apple, iPhone, Apple Watch, Mac, AirPlay and App Store are trademarks of Apple Inc. Google Cast and Chromecast are trademarks of Google LLC.</span>
+</div></footer>
+</body>
+</html>

@@ -27,6 +27,8 @@ A free, open-source iPhone, Apple Watch and Mac player for [Navidrome](https://w
 - Remote: control what's playing on the iPhone, favourite songs, and see Up Next
 - Signs in automatically using the iPhone's server login
 
+For optional track, album, and artist editing, see the [Navidrome library management setup](server/library/README.md).
+
 ## Building
 
 Requires Xcode 26+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen).

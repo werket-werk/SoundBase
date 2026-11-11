@@ -10,7 +10,7 @@
 <meta property="og:image" content="assets/icon.png">
 <link rel="icon" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/icon.png">
-<link rel="stylesheet" href="assets/style.css?v=950f55f27223">
+<link rel="stylesheet" href="assets/style.css?v=e8a472062307">
 </head>
 <body>
 <header class="nav"><div class="wrap">
@@ -38,6 +38,9 @@
   <li>That's it. On Apple Watch, open SoundBase after signing in on your iPhone and it connects automatically.</li>
 </ol>
 
+<h2>Library editing</h2>
+<p>For track, album and artist editing, follow the <a href="library-setup.html">library editing setup guide</a>. It covers the server helper, HTTPS, artwork and 30-day recovery.</p>
+
 <h2>Frequently asked questions</h2>
 <details><summary>Which servers work with SoundBase?</summary><p>Navidrome is the main server it's tested with. Other servers that support the Subsonic or OpenSubsonic API should work, but some features (like synced lyrics) depend on the server supporting them.</p></details>
 <details><summary>Why can't I sign in?</summary><p>Check the address includes the right port if your server uses one (for example <code>music.example.com:4533</code>), that the server is reachable from your device, and that your username and password work in the server's web interface. If your server is only on your home network, you need to be on that network or a VPN.</p></details>
@@ -48,7 +51,7 @@
 <details><summary>How do I cast to a Chromecast or Google TV?</summary><p>Make sure your iPhone and the Cast device are on the same Wi-Fi network and that you've allowed Local Network access for SoundBase (Settings › Privacy &amp; Security › Local Network). Then tap the Cast button in Now Playing. Your server must be reachable from the Cast device, and an <code>https://</code> address works best.</p></details>
 <details><summary>Can I change the app icon?</summary><p>Yes. Pick a colour in Settings › Appearance and the icon changes to match, if “App Icon Matches Colour” is on.</p></details>
 <details><summary>Is SoundBase really free?</summary><p>Yes. It's free, has no ads or in-app purchases, and the full source code is on <a href="https://github.com/werket-werk/SoundBase">GitHub</a> under the MIT License.</p></details>
-<details><summary>Does SoundBase collect my data?</summary><p>No. The app talks only to your server. See the <a href="privacy.html">privacy policy</a> for details, including the Google Cast SDK on iPhone.</p></details>
+<details><summary>Does SoundBase collect my data?</summary><p>The developer does not collect your data. See the <a href="privacy.html">privacy policy</a> for how optional features such as Google Cast and artwork search use third-party services.</p></details>
 
 <h2>Contributing</h2>
 <p>SoundBase is open source. Pull requests, translations and bug reports are welcome on <a href="https://github.com/werket-werk/SoundBase">GitHub</a>.</p>
@@ -57,7 +60,7 @@
 </main>
 <footer><div class="wrap">
   <span>© 2026 SoundBase. Free and open source under the MIT License.</span>
-  <span class="links"><a href="privacy.html">Privacy Policy</a><a href="terms.html">Terms of Use</a><a href="support.html">Support</a><a href="https://github.com/werket-werk/SoundBase">Source Code</a></span>
+  <span class="links"><a href="privacy.html">Privacy Policy</a><a href="terms.html">Terms of Use</a><a href="support.html">Support</a><a href="library-setup.html">Library setup</a><a href="https://github.com/werket-werk/SoundBase">Source Code</a></span>
   <span class="fine">SoundBase is an independent project and is not affiliated with or endorsed by Navidrome, Subsonic, Apple or Google. Apple, iPhone, Apple Watch, Mac, AirPlay and App Store are trademarks of Apple Inc. Google Cast and Chromecast are trademarks of Google LLC.</span>
 </div></footer>
 </body>

@@ -139,6 +139,9 @@ html:has(#screenshot-viewer[open]) { overflow: hidden; }
 .doc h3 { font-size: 19px; margin: 24px 0 8px; }
 .doc p, .doc li { color: var(--text); }
 .doc ul { padding-left: 22px; }
+.doc pre { overflow-x: auto; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft); }
+.doc pre code { white-space: pre; }
+.doc :not(pre) > code { overflow-wrap: anywhere; }
 .doc table { width: 100%; border-collapse: collapse; font-size: 15px; margin: 12px 0; display: block; overflow-x: auto; }
 .doc th, .doc td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .doc th { background: var(--bg-soft); }

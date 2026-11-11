@@ -1,0 +1,26 @@
+services:
+  soundbase-library:
+    build: .
+    restart: unless-stopped
+    user: "1000:1000"
+    command:
+      - --bind
+      - 0.0.0.0
+      - --navidrome
+      - http://navidrome:4533
+      - --music
+      - /music
+      - --recovery
+      - /recovery
+      - --recovery-days
+      - "30"
+    volumes:
+      - /srv/music:/music
+      - /srv/soundbase-recovery:/recovery
+    networks:
+      - music
+
+networks:
+  music:
+    external: true
+    name: music
