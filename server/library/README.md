@@ -7,6 +7,21 @@ over HTTPS.
 
 ## Set up the helper
 
+Use your own server settings in the commands below. The addresses and paths
+shown are examples.
+
+| Replaceable value | Example | What to use |
+| --- | --- | --- |
+| `<NAVIDROME_INTERNAL_URL>` | `http://127.0.0.1:4533` | The URL reachable by the helper, including any base path |
+| `<PUBLIC_NAVIDROME_URL>` | `https://music.example.com` | The HTTPS URL entered in SoundBase |
+| `<HELPER_UPSTREAM>` | `http://127.0.0.1:4534` | The helper URL reachable by your HTTPS proxy |
+| `<MUSIC_PATH>` | `/srv/music` | Your music directory, matching the paths Navidrome reports |
+| `<RECOVERY_PATH>` | `/srv/soundbase-recovery` | A writable directory outside the music library, on the same filesystem |
+
+Replace the entire placeholder, including the brackets. Loopback
+(`127.0.0.1`) works when the caller and destination share the same host
+network or container.
+
 1. Use a Navidrome version that supports **Report Real Path**. Set
    `ND_SUBSONIC_DEFAULTREPORTREALPATH=true` before the helper first connects.
    If the helper already has a player entry, enable **Report Real Path**
@@ -23,9 +38,9 @@ over HTTPS.
    python3 -m venv .venv
    .venv/bin/pip install -r server/library/requirements.txt
    .venv/bin/python server/library/manager.py \
-     --navidrome http://127.0.0.1:4533 \
-     --music /srv/music \
-     --recovery /srv/soundbase-recovery
+     --navidrome "<NAVIDROME_INTERNAL_URL>" \
+     --music "<MUSIC_PATH>" \
+     --recovery "<RECOVERY_PATH>"
    ```
 
 4. Route `/soundbase-library/v1/` on the same HTTPS origin as Navidrome to
@@ -34,7 +49,7 @@ over HTTPS.
 
    ```nginx
    location /soundbase-library/v1/ {
-       proxy_pass http://127.0.0.1:4534;
+       proxy_pass <HELPER_UPSTREAM>;
        client_max_body_size 3m;
        proxy_read_timeout 300s;
    }
@@ -42,7 +57,7 @@ over HTTPS.
 
    For a Navidrome base path such as `/music`, match
    `/music/soundbase-library/v1/` and use
-   `proxy_pass http://127.0.0.1:4534/soundbase-library/v1/;` to strip the
+   `proxy_pass <HELPER_UPSTREAM>/soundbase-library/v1/;` to strip the
    base path before forwarding. The helper listens on loopback and checks
    the existing SoundBase account with Navidrome for each request. Keep
    request bodies out of proxy logs because they contain Subsonic credentials.
@@ -63,7 +78,7 @@ Wants=network-online.target
 User=music
 Group=music
 WorkingDirectory=/opt/soundbase-library
-ExecStart=/opt/soundbase-library/.venv/bin/python /opt/soundbase-library/manager.py --music /srv/music --recovery /srv/soundbase-recovery --recovery-days 30
+ExecStart=/opt/soundbase-library/.venv/bin/python /opt/soundbase-library/manager.py --navidrome "<NAVIDROME_INTERNAL_URL>" --music "<MUSIC_PATH>" --recovery "<RECOVERY_PATH>" --recovery-days 30
 Restart=on-failure
 
 [Install]

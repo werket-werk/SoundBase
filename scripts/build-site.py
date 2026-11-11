@@ -353,29 +353,39 @@ page("library-setup", "Library editing setup — SoundBase", "Install the SoundB
 <p>The helper manages one music root. For multiple libraries, keep the configured root scoped to the library you intend to edit. Docker paths must match the absolute paths reported by Navidrome, such as <code>/music</code>.</p>
 
 <h2 id="install">Install the helper</h2>
-<p>Download the <a href="https://github.com/werket-werk/SoundBase/tree/main/server/library">helper source and deployment examples</a>. On a Linux host with Python 3.11 or newer, install it under a directory such as <code>/opt/soundbase-library</code>. Replace the example paths with your actual storage paths.</p>
+<p>Download the <a href="https://github.com/werket-werk/SoundBase/tree/main/server/library">helper source and deployment examples</a>. On a Linux host with Python 3.11 or newer, install it under a directory such as <code>/opt/soundbase-library</code>. Replace each value in angle brackets with your own value, including removing the brackets.</p>
+<table>
+  <thead><tr><th>Replace this</th><th>With your own value</th><th>Example</th></tr></thead>
+  <tbody>
+    <tr><td><code>&lt;NAVIDROME_INTERNAL_URL&gt;</code></td><td>The address the helper uses to reach Navidrome</td><td><code>http://127.0.0.1:4533</code> on the same host, or <code>http://192.0.2.10:4533</code> for an example separate server</td></tr>
+    <tr><td><code>&lt;MUSIC_PATH&gt;</code></td><td>The music directory as seen by the helper, matching the paths Navidrome reports</td><td><code>/srv/music</code></td></tr>
+    <tr><td><code>&lt;RECOVERY_PATH&gt;</code></td><td>A writable directory outside the music library, on the same filesystem</td><td><code>/srv/soundbase-recovery</code></td></tr>
+    <tr><td><code>&lt;PUBLIC_NAVIDROME_URL&gt;</code></td><td>The HTTPS address you enter in SoundBase</td><td><code>https://music.example.com</code></td></tr>
+  </tbody>
+</table>
+<p><code>192.0.2.10</code> and <code>music.example.com</code> are documentation examples. <code>127.0.0.1</code> means the same host or container as the process using it. Use your own hostname, IP, port and base path when they differ.</p>
 <pre><code>git clone https://github.com/werket-werk/SoundBase.git
 cd SoundBase/server/library
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python manager.py \\
-  --navidrome http://127.0.0.1:4533 \\
-  --music /srv/music \\
-  --recovery /srv/soundbase-recovery \\
+  --navidrome "&lt;NAVIDROME_INTERNAL_URL&gt;" \\
+  --music "&lt;MUSIC_PATH&gt;" \\
+  --recovery "&lt;RECOVERY_PATH&gt;" \\
   --recovery-days 30</code></pre>
 <p>For Navidrome with a base path, include it in <code>--navidrome</code>, for example <code>http://127.0.0.1:4533/music</code>. The helper listens on loopback by default.</p>
 <details><summary>Run automatically with systemd</summary>
-<p>Place the helper files and virtual environment in <code>/opt/soundbase-library</code>. Replace <code>music</code> with the account that owns your files and edit the paths below. Save this as <code>/etc/systemd/system/soundbase-library.service</code>.</p>
+<p>Place the helper files and virtual environment in <code>/opt/soundbase-library</code>. Replace <code>&lt;SERVICE_USER&gt;</code> and <code>&lt;SERVICE_GROUP&gt;</code> with the account and group that can write your files, for example <code>music</code>. Replace <code>&lt;HELPER_DIR&gt;</code> with the installation directory, for example <code>/opt/soundbase-library</code>. Save this as <code>/etc/systemd/system/soundbase-library.service</code>.</p>
 <pre><code>[Unit]
 Description=SoundBase library helper
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=music
-Group=music
-WorkingDirectory=/opt/soundbase-library
-ExecStart=/opt/soundbase-library/.venv/bin/python /opt/soundbase-library/manager.py --music /srv/music --recovery /srv/soundbase-recovery --recovery-days 30
+User=&lt;SERVICE_USER&gt;
+Group=&lt;SERVICE_GROUP&gt;
+WorkingDirectory=&lt;HELPER_DIR&gt;
+ExecStart=&lt;HELPER_DIR&gt;/.venv/bin/python "&lt;HELPER_DIR&gt;/manager.py" --navidrome "&lt;NAVIDROME_INTERNAL_URL&gt;" --music "&lt;MUSIC_PATH&gt;" --recovery "&lt;RECOVERY_PATH&gt;" --recovery-days 30
 Restart=on-failure
 
 [Install]
@@ -384,28 +394,28 @@ WantedBy=multi-user.target</code></pre>
 systemctl status soundbase-library</code></pre>
 </details>
 <details><summary>Run with Docker Compose</summary>
-<p>Use <code>Dockerfile</code> and <code>compose.example.yml</code> from the helper directory. Edit the music and recovery mounts, the container UID/GID, and the external network name to match your server. Put Navidrome, the helper and the HTTPS proxy on that network.</p>
+<p>Use <code>Dockerfile</code> and <code>compose.example.yml</code> from the helper directory. Replace the sample host paths on the left side of the volume mounts. Set the container music path to the path Navidrome reports, and match the helper’s <code>--music</code> argument to it. Use your service account’s UID/GID instead of the sample <code>1000:1000</code> and your Docker network name instead of <code>music</code>. Put Navidrome, the helper and the HTTPS proxy on that network.</p>
 <pre><code>docker compose -f compose.example.yml up -d --build
 docker compose -f compose.example.yml logs soundbase-library</code></pre>
 <p>The example binds inside the container and publishes no host port. Point the proxy at <code>http://soundbase-library:4534</code>. The Navidrome URL becomes <code>http://navidrome:4533</code> when that is its container name.</p>
 </details>
 
 <h2 id="proxy">Add the HTTPS proxy route</h2>
-<p>Add this location to the existing HTTPS virtual host for your music server. Keep its existing Navidrome route.</p>
+<p>Add this location to the HTTPS virtual host for <code>&lt;PUBLIC_NAVIDROME_URL&gt;</code>. Keep its existing Navidrome route. Replace <code>&lt;HELPER_UPSTREAM&gt;</code> with the address the proxy uses to reach the helper, for example <code>http://127.0.0.1:4534</code> if they run on the same host.</p>
 <pre><code>location /soundbase-library/v1/ {
-    proxy_pass http://127.0.0.1:4534;
+    proxy_pass &lt;HELPER_UPSTREAM&gt;;
     client_max_body_size 3m;
     proxy_read_timeout 300s;
 }</code></pre>
 <p>For a Docker proxy, use <code>proxy_pass http://soundbase-library:4534;</code>. In Nginx Proxy Manager, add the location in the music host’s <strong>Advanced</strong> configuration.</p>
-<p>If your public server address has a base path such as <code>/music</code>, match <code>/music/soundbase-library/v1/</code> and use <code>proxy_pass http://127.0.0.1:4534/soundbase-library/v1/;</code> so the helper receives the route without the base path.</p>
+<p>If your public server address has a base path such as <code>/music</code>, match <code>/music/soundbase-library/v1/</code> and use <code>proxy_pass &lt;HELPER_UPSTREAM&gt;/soundbase-library/v1/;</code> so the helper receives the route without the base path.</p>
 <p>The helper checks the existing SoundBase login against Navidrome on every request and requires administrator privileges. Keep request bodies out of proxy logs because they contain Subsonic authentication tokens. Test the proxy configuration before reloading it.</p>
 
 <h2 id="artwork">Configure artwork</h2>
 <p>For tracks and albums, import an image or preview and select a release from MusicBrainz and the Cover Art Archive. The helper embeds the cover in FLAC, MP3 or M4A files. Other metadata edits use the tag formats supported by Mutagen.</p>
 <p>If existing folder images take precedence over your replacement, put <code>embedded</code> first in Navidrome’s <code>CoverArtPriority</code>. To show one album cover across discs, you can also set <code>DiscArtPriority=""</code>. These settings affect artwork selection throughout the library.</p>
-<p>For artist images, create a writable image directory on the recovery filesystem, pass it as <code>--artist-images /srv/artist-images</code>, and configure Navidrome with the same directory.</p>
-<pre><code>ArtistImageFolder = "/srv/artist-images"
+<p>For artist images, create a writable image directory on the recovery filesystem, pass it as <code>--artist-images "&lt;ARTIST_IMAGE_PATH&gt;"</code> (for example <code>/srv/artist-images</code>), and configure Navidrome with the same directory.</p>
+<pre><code>ArtistImageFolder = "&lt;ARTIST_IMAGE_PATH&gt;"
 ArtistArtPriority = "image-folder,artist.*,album/artist.*,external"</code></pre>
 <p>For Docker, mount that folder into both containers and use each container’s matching path. Existing artist images uploaded through Navidrome may take precedence. Use Navidrome’s <strong>Refresh Metadata</strong> action if cached artwork persists. See <a href="https://www.navidrome.org/docs/usage/library/artwork/">Navidrome’s artwork documentation</a>.</p>
 <p>Artwork searches send the album and artist names to MusicBrainz. Cover previews and downloads contact the Cover Art Archive and its image hosts. Imported images are uploaded to your own helper.</p>
@@ -413,7 +423,7 @@ ArtistArtPriority = "image-folder,artist.*,album/artist.*,external"</code></pre>
 <h2 id="verify">Check the setup</h2>
 <ol>
 <li>Check the helper’s service or Docker logs for startup errors.</li>
-<li>Reopen a SoundBase build that includes editing and sign in as a Navidrome administrator using your HTTPS address.</li>
+<li>Reopen a SoundBase build that includes editing and sign in as a Navidrome administrator using <code>&lt;PUBLIC_NAVIDROME_URL&gt;</code>.</li>
 <li>Open a track, album or artist menu and choose <strong>Edit</strong>.</li>
 <li>Change a test track’s genre, save, and wait for Navidrome’s scan. Confirm the change in SoundBase and Navidrome.</li>
 <li>Check that the recovery folder contains the original file and a <code>.soundbase-completed</code> marker inside the operation directory.</li>
