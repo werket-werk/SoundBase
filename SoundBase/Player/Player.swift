@@ -984,7 +984,9 @@ final class PlaybackEndpoint {
             let requestedPosition = message[WatchKey.elapsed] as? Double ?? staged.transfer.position
             let position = requestedPosition.isFinite ? max(0, requestedPosition) : staged.transfer.position
             player.receive(PlaybackTransfer(queue: staged.transfer.queue, index: staged.transfer.index,
-                                            position: position, playing: message[WatchKey.isPlaying] as? Bool ?? staged.transfer.playing))
+                                            position: position, playing: message[WatchKey.isPlaying] as? Bool ?? staged.transfer.playing,
+                                            manualIndexes: staged.transfer.manualIndexes,
+                                            autoplayStart: staged.transfer.autoplayStart))
             return success
         case .committed:
             return lastCommit == id ? success : failure

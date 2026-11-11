@@ -9,35 +9,42 @@ struct MiniPlayerView: View {
     @Environment(Router.self) private var router
 
     var body: some View {
+        let macTitle = PhoneSession.shared.macPlaybackTitle
         HStack(spacing: 12) {
-            Artwork(id: player.current?.coverArt, size: 120, corner: 6)
-                .frame(width: 34, height: 34)
+            if macTitle != nil {
+                Image(systemName: "desktopcomputer").frame(width: 34, height: 34)
+            } else {
+                Artwork(id: player.current?.coverArt, size: 120, corner: 6)
+                    .frame(width: 34, height: 34)
+            }
             VStack(alignment: .leading, spacing: 0) {
-                Text(player.current?.title ?? "Not Playing")
+                Text(macTitle ?? player.current?.title ?? "Not Playing")
                     .font(.subheadline.weight(.medium))
                     .lineLimit(1)
-                if let artist = player.current?.artist {
+                if let artist = macTitle == nil ? player.current?.artist : "Mac" {
                     Text(artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 4)
-            Button { player.togglePlayPause() } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.title3)
-                    .frame(width: 36, height: 36)
-                    .contentTransition(.symbolEffect(.replace))
+            if macTitle == nil {
+                Button { player.togglePlayPause() } label: {
+                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.title3)
+                        .frame(width: 36, height: 36)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .disabled(player.current == nil)
+                Button { player.next() } label: {
+                    Image(systemName: "forward.fill").font(.body).frame(width: 32, height: 36)
+                }
+                .disabled(player.current == nil)
             }
-            .disabled(player.current == nil)
-            Button { player.next() } label: {
-                Image(systemName: "forward.fill").font(.body).frame(width: 32, height: 36)
-            }
-            .disabled(player.current == nil)
         }
         .foregroundStyle(.primary)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .contentShape(Rectangle())
-        .onTapGesture { if player.current != nil { router.showNowPlaying = true } }
+        .onTapGesture { router.showNowPlaying = true }
     }
 }
 
@@ -50,6 +57,7 @@ struct NowPlayingView: View {
     @Environment(CastManager.self) private var cast
     @Environment(\.dismiss) private var dismiss
     @State private var panel: Panel = .none
+    @State private var showDevices = false
 
     enum Panel { case none, lyrics, queue }
 
@@ -69,10 +77,10 @@ struct NowPlayingView: View {
                     Spacer()
                     Text("Now Playing").font(.headline)
                     Spacer()
-                    Color.clear.frame(width: 44, height: 44)
+                    devicesButton
                 }
                 .padding(.top, 4)
-                if let song = player.current {
+                if PhoneSession.shared.macPlaybackTitle == nil, let song = player.current {
                     if panel == .none {
                         Spacer(minLength: 12)
                         Artwork(id: song.coverArt, size: 1000, corner: 12)
@@ -102,7 +110,12 @@ struct NowPlayingView: View {
                     bottomBar.padding(.top, 18).padding(.bottom, 8)
                 } else {
                     Spacer()
-                    Text("Not Playing").font(.title2.bold())
+                    if let title = PhoneSession.shared.macPlaybackTitle {
+                        Text(title).font(.title2.bold())
+                        Label("On Mac", systemImage: "desktopcomputer").foregroundStyle(.secondary)
+                    } else {
+                        Text("Not Playing").font(.title2.bold())
+                    }
                     Spacer()
                 }
             }
@@ -116,6 +129,7 @@ struct NowPlayingView: View {
                 router.initialNowPlayingPanel = nil
             }
         }
+        .sheet(isPresented: $showDevices) { PlaybackDevicesView() }
         .sheet(isPresented: Binding(
             get: { router.playlistPickerSongs != nil },
             set: { if !$0 { router.playlistPickerSongs = nil } })) {
@@ -182,13 +196,20 @@ struct NowPlayingView: View {
             Spacer()
             panelButton(.lyrics, icon: "quote.bubble")
             Spacer()
-            AirPlayButton().frame(width: 44, height: 44)
-            Spacer()
-            CastButton().frame(width: 44, height: 44)
-            Spacer()
             panelButton(.queue, icon: "list.bullet")
             Spacer()
         }
+    }
+
+    private var devicesButton: some View {
+        Button { showDevices = true } label: {
+            Image(systemName: "speaker.wave.2")
+                .font(.headline)
+                .frame(width: 44, height: 44)
+                .background(.white.opacity(0.12), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Playback Devices")
     }
 
     private func panelButton(_ target: Panel, icon: String) -> some View {
@@ -201,6 +222,79 @@ struct NowPlayingView: View {
                 .background(panel == target ? .white.opacity(0.2) : .clear, in: Circle())
         }
         .opacity(panel == target ? 1 : 0.7)
+    }
+}
+
+private struct PlaybackDevicesView: View {
+    @Environment(CastManager.self) private var cast
+    @Environment(\.dismiss) private var dismiss
+    private let session = PhoneSession.shared
+    private let nearby = NearbyPlayback.shared
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Current Device") {
+                    if cast.isCasting {
+                        Label(cast.deviceName ?? "Cast Device", systemImage: "tv.and.mediabox")
+                    } else if session.macPlaybackTitle != nil {
+                        Label("Mac", systemImage: "desktopcomputer")
+                    } else {
+                        Label("This iPhone", systemImage: "iphone")
+                    }
+                }
+                Section("Move Playback") {
+                    if session.macAvailable {
+                        if session.macPlaybackTitle != nil {
+                            Button("Move to This iPhone", systemImage: "iphone") {
+                                Task { await session.movePlayback(to: .phone) }
+                            }
+                        } else {
+                            MoveToMacButton()
+                        }
+                    } else if nearby.connected {
+                        Text("Sign in to the same server account on your Mac.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        MacPairingControls()
+                    }
+                    if session.switchingDevices { ProgressView("Moving playback…") }
+                    if let issue = session.deviceIssue { Text(issue).foregroundStyle(.secondary) }
+                }
+                .disabled(session.switchingDevices)
+
+                Section("Audio Outputs") {
+                    HStack {
+                        Label("AirPlay", systemImage: "airplay.audio")
+                        Spacer()
+                        AirPlayButton().frame(width: 44, height: 36)
+                            .accessibilityLabel("Choose AirPlay Output")
+                    }
+                    HStack {
+                        Label("Cast", systemImage: "tv")
+                        Spacer()
+                        CastButton().frame(width: 44, height: 36)
+                            .accessibilityLabel("Choose Cast Device")
+                    }
+                }
+            }
+            .navigationTitle("Devices")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+    }
+}
+
+private struct MoveToMacButton: View {
+    @Environment(Player.self) private var player
+
+    var body: some View {
+        Button("Move to Mac", systemImage: "desktopcomputer") {
+            Task { await PhoneSession.shared.movePlayback(to: .mac) }
+        }
+        .disabled(player.current == nil || player.current?.isRadio == true || player.isCasting)
     }
 }
 

@@ -6,6 +6,7 @@ struct LibraryView: View {
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
     @State private var recent: [Album] = []
+    @State private var savedAlbums: [Album] = []
 
     private let rows: [(String, String, Route)] = [
         ("Playlists", "music.note.list", .playlists),
@@ -13,13 +14,39 @@ struct LibraryView: View {
         ("Albums", "square.stack", .albums(title: "Albums", type: "alphabeticalByName")),
         ("Songs", "music.note", .songs),
         ("Genres", "guitars", .genres),
-        ("Favourites", "star", .loved),
         ("Downloaded", "arrow.down.circle", .downloads),
     ]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                NavigationLink {
+                    SearchView(inLibrary: true)
+                } label: {
+                    Label("Search Library", systemImage: "magnifyingglass")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 16)
+
+                NavigationLink(value: Route.loved) {
+                    Label("Favourites", systemImage: "star.fill").padding(.horizontal).padding(.vertical, 10)
+                }
+                ForEach(model.pinnedPlaylistIDs, id: \.self) { id in
+                    if let name = model.playlists.first(where: { $0.id == id })?.name
+                        ?? model.downloads.playlistIndex.playlists[id]?.name {
+                        NavigationLink(value: Route.playlist(id)) {
+                            Label(name, systemImage: "pin.fill").padding(.horizontal).padding(.vertical, 10)
+                        }
+                        .contextMenu {
+                            Button("Unpin", systemImage: "pin.slash") { model.togglePlaylistPin(id) }
+                        }
+                    }
+                }
+                AlbumShelf(title: "Favourite Albums", albums: savedAlbums, route: .loved)
+                    .padding(.vertical, savedAlbums.isEmpty ? 0 : 12)
                 ForEach(rows, id: \.0) { row in
                     NavigationLink(value: row.2) {
                         HStack(spacing: 14) {
@@ -52,6 +79,11 @@ struct LibraryView: View {
         }
         .refreshable { recent = (try? await model.client?.albumList("newest", size: 30)) ?? recent }
         .task { if recent.isEmpty { recent = (try? await model.client?.albumList("newest", size: 30)) ?? [] } }
+        .task(id: model.loved) {
+            if let favourites = try? await model.client?.starred(), !Task.isCancelled {
+                savedAlbums = favourites.album ?? []
+            }
+        }
     }
 }
 
@@ -65,13 +97,29 @@ struct AlbumGridView: View {
     @State private var albums: [Album] = []
     @State private var sort: String?
     @State private var done = false
-    @State private var loading = false
+    @State private var loadingRequest: UUID?
+    private var loading: Bool { loadingRequest != nil }
+    @State private var failed = false
 
     private var currentType: String { sort ?? type }
     private var showsViewOptions: Bool { type == "alphabeticalByName" || type == "alphabeticalByArtist" }
 
     var body: some View {
         ScrollView {
+            if failed && albums.isEmpty {
+                if showsViewOptions {
+                    let local = model.downloads.albums.compactMap { collection -> Album? in
+                        guard let track = collection.tracks.first, let id = track.albumId else { return nil }
+                        return Album(id: id, name: track.album ?? "Unknown Album", artist: track.artist, coverArt: track.coverArt)
+                    }
+                    AlbumShelf(title: "Downloaded Albums", albums: local).padding(.vertical)
+                }
+                ContentUnavailableView {
+                    Label("Server Albums Unavailable", systemImage: "exclamationmark.circle")
+                } actions: {
+                    Button("Retry") { Task { await loadMore() } }
+                }
+            }
             if showsViewOptions && layout == .list {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(albums) { album in
@@ -105,18 +153,26 @@ struct AlbumGridView: View {
                 } label: { Image(systemName: "arrow.up.arrow.down") }
             }
         }
-        .onChange(of: sort) { _, _ in
-            albums = []; done = false
-            Task { await loadMore() }
+        .task(id: currentType) {
+            albums = []
+            done = false
+            loadingRequest = nil
+            await loadMore()
         }
-        .task { if albums.isEmpty { await loadMore() } }
     }
 
     private func loadMore() async {
         guard !loading, !done, let client = model.client else { return }
-        loading = true
-        defer { loading = false }
-        let page = (try? await client.albumList(currentType, size: 60, offset: albums.count)) ?? []
+        let request = UUID()
+        loadingRequest = request
+        defer { if loadingRequest == request { loadingRequest = nil } }
+        failed = false
+        let requestedType = currentType
+        guard let page = try? await client.albumList(requestedType, size: 60, offset: albums.count) else {
+            if !Task.isCancelled, loadingRequest == request { failed = true }
+            return
+        }
+        guard !Task.isCancelled, loadingRequest == request else { return }
         if page.count < 60 || type == "random" { done = true }
         let existing = Set(albums.map(\.id))
         albums += page.filter { !existing.contains($0.id) }
@@ -244,17 +300,19 @@ struct PlaylistsView: View {
     @AppStorage("library.playlists.layout") private var layout = LibraryLayout.list
     @State private var newName = ""
     @State private var showNew = false
+    @State private var creating = false
+    @State private var createError: String?
 
     var body: some View {
         Group {
             if layout == .grid {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        Button { showNew = true } label: {
+                        Button { if !creating { showNew = true } } label: {
                             Label("New Playlist…", systemImage: "plus")
                         }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 135, maximum: 240), spacing: 14, alignment: .top)], spacing: 18) {
-                            ForEach(model.playlists) { playlist in
+                            ForEach(model.browsablePlaylists) { playlist in
                                 NavigationLink(value: Route.playlist(playlist.id)) {
                                     VStack(alignment: .leading, spacing: 6) {
                                         Artwork(id: playlist.coverArt, size: 400)
@@ -269,7 +327,7 @@ struct PlaylistsView: View {
                 }
             } else {
                 List {
-                    Button { showNew = true } label: {
+                    Button { if !creating { showNew = true } } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "plus")
                                 .font(.title2)
@@ -278,7 +336,7 @@ struct PlaylistsView: View {
                             Text("New Playlist…").foregroundStyle(.tint)
                         }
                     }
-                    ForEach(model.playlists) { playlist in
+                    ForEach(model.browsablePlaylists) { playlist in
                         NavigationLink(value: Route.playlist(playlist.id)) {
                             HStack(spacing: 12) {
                                 Artwork(id: playlist.coverArt, size: 160, corner: 6).frame(width: 56, height: 56)
@@ -298,14 +356,24 @@ struct PlaylistsView: View {
             TextField("Playlist Name", text: $newName)
             Button("Cancel", role: .cancel) { newName = "" }
             Button("Create") {
-                let name = newName
-                newName = ""
+                let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty, !creating, let client = model.client else { return }
+                creating = true
                 Task {
-                    try? await model.client?.createPlaylist(name: name, songIds: [])
-                    await model.refreshPlaylists()
+                    defer { creating = false }
+                    do {
+                        try await client.createPlaylist(name: name, songIds: [])
+                        newName = ""
+                        await model.refreshPlaylists()
+                    } catch {
+                        createError = error.localizedDescription
+                    }
                 }
             }
         }
+        .alert("Couldn’t Create Playlist", isPresented: Binding(
+            get: { createError != nil }, set: { if !$0 { createError = nil } }
+        )) { Button("OK", role: .cancel) {} } message: { Text(createError ?? "") }
     }
 
     private func playlistTitle(_ playlist: Playlist) -> some View {
@@ -319,6 +387,8 @@ struct PlaylistPicker: View {
     @Environment(\.dismiss) private var dismiss
     @State private var newName = ""
     @State private var showNew = false
+    @State private var saving = false
+    @State private var error: String?
 
     var body: some View {
         let songs = router.playlistPickerSongs ?? []
@@ -327,11 +397,7 @@ struct PlaylistPicker: View {
                 Button { showNew = true } label: { Label("New Playlist…", systemImage: "plus") }
                 ForEach(model.playlists) { playlist in
                     Button {
-                        Task {
-                            try? await model.client?.addToPlaylist(playlist.id, songIds: songs.map(\.id))
-                            await model.refreshPlaylists()
-                            close()
-                        }
+                        save { try await $0.addToPlaylist(playlist.id, songIds: songs.map(\.id)) }
                     } label: {
                         HStack(spacing: 12) {
                             Artwork(id: playlist.coverArt, size: 120, corner: 5).frame(width: 44, height: 44)
@@ -340,23 +406,40 @@ struct PlaylistPicker: View {
                     }
                 }
             }
+            .disabled(saving)
+            .interactiveDismissDisabled(saving)
+            .alert("Couldn’t Save to Playlist", isPresented: Binding(
+                get: { error != nil }, set: { if !$0 { error = nil } }
+            )) { Button("OK", role: .cancel) {} } message: { Text(error ?? "") }
             .navigationTitle("Add to Playlist")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { Button("Cancel") { close() } }
+            .toolbar { Button("Cancel") { close() }.disabled(saving) }
             .alert("New Playlist", isPresented: $showNew) {
                 TextField("Playlist Name", text: $newName)
                 Button("Cancel", role: .cancel) {}
                 Button("Create") {
-                    let name = newName
-                    Task {
-                        try? await model.client?.createPlaylist(name: name, songIds: songs.map(\.id))
-                        await model.refreshPlaylists()
-                        close()
-                    }
+                    let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !name.isEmpty else { return }
+                    save { try await $0.createPlaylist(name: name, songIds: songs.map(\.id)) }
                 }
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private func save(_ write: @escaping (SubsonicClient) async throws -> Void) {
+        guard !saving, let client = model.client else { return }
+        saving = true
+        Task {
+            defer { saving = false }
+            do {
+                try await write(client)
+                await model.refreshPlaylists()
+                close()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
     }
 
     private func close() {

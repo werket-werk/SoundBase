@@ -190,6 +190,18 @@ final class SubsonicClient: Sendable {
         let needsForm = url("createPlaylist", parameters).absoluteString.utf8.count > 1_900
         try await call("createPlaylist", parameters, formPost: needsForm)
     }
+    func renamePlaylist(_ id: String, name: String) async throws {
+        try await call("updatePlaylist", [("playlistId", id), ("name", name)])
+    }
+
+    func reorderPlaylist(_ id: String, songIDs: [String]) async throws -> PlaylistDetail? {
+        let parameters = [("playlistId", id)] + songIDs.map { ("songId", $0) }
+        let needsForm = url("createPlaylist", parameters).absoluteString.utf8.count > 1_900
+        let response = try await call("createPlaylist", parameters, formPost: needsForm)
+        if let playlist = response.playlist { return playlist }
+        return try await playlist(id)
+    }
+
     func addToPlaylist(_ id: String, songIds: [String]) async throws {
         try await call("updatePlaylist", [("playlistId", id)] + songIds.map { ("songIdToAdd", $0) })
     }

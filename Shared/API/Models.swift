@@ -161,6 +161,7 @@ struct PlaylistDetail: Decodable, Identifiable {
     var duration: Int?
     var coverArt: String?
     var entry: [Song]?
+    var readonly: Bool? = nil
 }
 
 struct SearchResult: Decodable {

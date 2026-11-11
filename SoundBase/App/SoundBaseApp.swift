@@ -65,7 +65,7 @@ struct MainTabView: View {
                 NavigationStack(path: $router.searchPath) { SearchView().routes() }
             }
         }
-        .miniPlayer(visible: model.player.current != nil)
+        .miniPlayer(visible: model.player.current != nil || PhoneSession.shared.macPlaybackTitle != nil)
         .fullScreenCover(isPresented: $router.showNowPlaying) {
             NowPlayingView()
         }

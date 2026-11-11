@@ -3,6 +3,13 @@ import SwiftUI
 // MARK: - Search
 
 struct SearchView: View {
+    var inLibrary = false
+    @AppStorage("recentMusicSearches") private var recentSearches = ""
+    private var matchingPlaylists: [Playlist] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return [] }
+        return model.browsablePlaylists.filter { $0.name.localizedStandardContains(term) }
+    }
     @Environment(AppModel.self) private var model
     @State private var query = ""
     @State private var results: SearchResult?
@@ -10,25 +17,39 @@ struct SearchView: View {
     @State private var searching = false
     @State private var failed = false
     @State private var attempt = 0
+    @State private var filter = LibrarySearchFilter.all
+
+    private enum LibrarySearchFilter: String, CaseIterable {
+        case all = "All", songs = "Songs", albums = "Albums", artists = "Artists", playlists = "Playlists"
+    }
 
     var body: some View {
         ScrollView {
             if query.trimmingCharacters(in: .whitespaces).isEmpty {
-                GenreGrid(genres: genres, title: "Browse Categories").padding(.vertical)
+                recentSearchList
+                if !inLibrary { GenreGrid(genres: genres, title: "Browse Categories").padding(.vertical) }
             } else if let results {
+                if inLibrary { libraryFilters }
                 resultsView(results)
-            } else if failed {
-                ContentUnavailableView {
-                    Label("Couldn’t Search", systemImage: "exclamationmark.circle")
-                } actions: {
-                    Button("Retry") { attempt += 1 }
+            } else {
+                if inLibrary { libraryFilters }
+                if filter == .all || filter == .songs { downloadedResults }
+                if filter == .all || filter == .playlists { playlistResults }
+                if failed {
+                    ContentUnavailableView {
+                        Label("Server Search Unavailable", systemImage: "exclamationmark.circle")
+                    } actions: {
+                        Button("Retry") { attempt += 1 }
+                    }
+                } else if searching {
+                    ProgressView().padding(24)
                 }
-            } else if searching {
-                ProgressView().padding(60)
             }
         }
-        .navigationTitle("Search")
-        .searchable(text: $query, prompt: "Artists, Albums, Songs")
+        .navigationTitle(inLibrary ? "Search Library" : "Search")
+        .searchable(text: $query, prompt: "Songs, Albums, Artists, Playlists")
+        .onSubmit(of: .search) { rememberSearch() }
+        .onDisappear { if results != nil { rememberSearch() } }
         .task(id: SearchRequest(query: query, attempt: attempt)) {
             results = nil
             failed = false
@@ -47,7 +68,8 @@ struct SearchView: View {
                 searching = false
             }
         }
-        .task { if genres.isEmpty { genres = (try? await model.client?.genres()) ?? [] } }
+        .task { if !inLibrary, genres.isEmpty { genres = (try? await model.client?.genres()) ?? [] } }
+        .task { await model.refreshPlaylists() }
         .onAppear {
             if let q = model.router.initialSearch { query = q; model.router.initialSearch = nil }
         }
@@ -56,39 +78,166 @@ struct SearchView: View {
     @ViewBuilder
     private func resultsView(_ r: SearchResult) -> some View {
         let songs = r.song ?? []
-        if (r.artist ?? []).isEmpty && (r.album ?? []).isEmpty && songs.isEmpty {
+        let showSongs = filter == .all || filter == .songs
+        let showAlbums = filter == .all || filter == .albums
+        let showArtists = filter == .all || filter == .artists
+        let showPlaylists = filter == .all || filter == .playlists
+        if (!showArtists || (r.artist ?? []).isEmpty) && (!showAlbums || (r.album ?? []).isEmpty)
+            && (!showSongs || songs.isEmpty) && (!showPlaylists || matchingPlaylists.isEmpty) {
             EmptyStateView(title: "No Results", systemImage: "magnifyingglass", message: "Try a different search.")
                 .padding(.top, 60)
         }
         LazyVStack(alignment: .leading, spacing: 26) {
-            if let top = r.artist?.first {
-                NavigationLink(value: Route.artist(top.id)) {
-                    HStack(spacing: 14) {
-                        Artwork(id: top.artworkID, size: 200, circle: true).frame(width: 72)
-                        VStack(alignment: .leading) {
-                            Text("TOP RESULT").font(.caption.bold()).foregroundStyle(.secondary)
-                            Text(top.name).font(.title3.bold()).foregroundStyle(.primary)
-                            Text("Artist").font(.subheadline).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .padding(.horizontal)
+            if filter == .all, let top = topResult(in: r) {
+                if let song = top.song {
+                    Button { playResult(song) } label: { topResultLabel(top) }.buttonStyle(.plain)
+                } else if let route = top.route {
+                    NavigationLink(value: route) { topResultLabel(top) }.buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
-            if !songs.isEmpty {
+            if showPlaylists { playlistResults }
+            if showSongs && !songs.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     ShelfHeader(title: "Songs", route: resultRoute(.songs))
-                    ForEach(songs.prefix(8)) { song in
-                        SongRow(song: song) { model.playFromLibrary([song]) }.padding(.horizontal)
+                    ForEach(songs.prefix(filter == .songs ? songs.count : 8)) { song in
+                        SongRow(song: song) { playResult(song) }.padding(.horizontal)
                     }
                 }
             }
-            AlbumShelf(title: "Albums", albums: r.album ?? [], route: resultRoute(.albums))
-            ArtistShelf(title: "Artists", artists: r.artist ?? [], route: resultRoute(.artists))
+            if showAlbums { AlbumShelf(title: "Albums", albums: r.album ?? [], route: resultRoute(.albums)) }
+            if showArtists { ArtistShelf(title: "Artists", artists: r.artist ?? [], route: resultRoute(.artists)) }
         }
         .padding(.vertical)
     }
+    private var libraryFilters: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(LibrarySearchFilter.allCases, id: \.self) { option in
+                    Button {
+                        filter = option
+                    } label: {
+                        Text(option.rawValue)
+                            .font(.subheadline.weight(.medium))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(filter == option ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12),
+                                        in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(filter == option ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    private var history: [String] { (try? JSONDecoder().decode([String].self, from: Data(recentSearches.utf8))) ?? [] }
+
+    @ViewBuilder private var recentSearchList: some View {
+        if !history.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Recent Searches").font(.headline)
+                    Spacer()
+                    Button("Clear") { recentSearches = "" }
+                }
+                ForEach(history, id: \.self) { term in
+                    Button { query = term } label: { Label(term, systemImage: "clock") }
+                }
+            }
+            .padding()
+        }
+    }
+
+    @ViewBuilder private var downloadedResults: some View {
+        let tracks = model.downloads.sortedSongs.filter {
+            $0.matchesDownloadSearch(query) && model.downloads.isDownloaded($0.id)
+        }
+        if !tracks.isEmpty {
+            LazyVStack(alignment: .leading) {
+                Text("Downloaded Songs").font(.headline)
+                ForEach(tracks) { song in
+                    SongRow(song: song) { playResult(song) }
+                }
+            }
+            .padding()
+        }
+    }
+
+    @ViewBuilder private var playlistResults: some View {
+        if !matchingPlaylists.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Playlists").font(.headline)
+                ForEach(matchingPlaylists) { playlist in
+                    NavigationLink(value: Route.playlist(playlist.id)) {
+                        Label(playlist.name, systemImage: "music.note.list")
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+        }
+    }
+
+    private func rememberSearch() {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return }
+        let terms = [term] + history.filter { $0.localizedStandardCompare(term) != .orderedSame }
+        if let data = try? JSONEncoder().encode(Array(terms.prefix(10))) {
+            recentSearches = String(decoding: data, as: UTF8.self)
+        }
+    }
+
+    private func playResult(_ song: Song) {
+        rememberSearch()
+        model.playFromLibrary([song])
+    }
+
+    private struct TopResult {
+        let title: String
+        let type: String
+        let artwork: String?
+        var song: Song?
+        var route: Route?
+        var terms: [String] = []
+    }
+
+    private func topResult(in results: SearchResult) -> TopResult? {
+        let candidates = (results.song ?? []).map {
+            TopResult(title: $0.title, type: "Song", artwork: $0.coverArt, song: $0,
+                      terms: [$0.artist, $0.album].compactMap { $0 })
+        } + (results.album ?? []).map {
+            TopResult(title: $0.name, type: "Album", artwork: $0.coverArt, route: .album($0.id),
+                      terms: [$0.artist].compactMap { $0 })
+        } + (results.artist ?? []).map {
+            TopResult(title: $0.name, type: "Artist", artwork: $0.artworkID, route: .artist($0.id))
+        }
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        func score(_ candidate: TopResult) -> Int {
+            if candidate.title.localizedStandardCompare(term) == .orderedSame { return 3 }
+            if candidate.terms.contains(where: { "\(candidate.title) \($0)".localizedStandardCompare(term) == .orderedSame
+                || "\($0) \(candidate.title)".localizedStandardCompare(term) == .orderedSame }) { return 3 }
+            if candidate.title.localizedStandardContains(term) { return 2 }
+            return 1
+        }
+        return candidates.enumerated().max {
+            (score($0.element), -$0.offset) < (score($1.element), -$1.offset)
+        }?.element
+    }
+
+    private func topResultLabel(_ top: TopResult) -> some View {
+        HStack(spacing: 14) {
+            Artwork(id: top.artwork, size: 200, corner: 8, circle: top.type == "Artist").frame(width: 72)
+            VStack(alignment: .leading) {
+                Text("TOP RESULT").font(.caption.bold()).foregroundStyle(.secondary)
+                Text(top.title).font(.title3.bold()).foregroundStyle(.primary)
+                Text(top.type).font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal)
+    }
+
     private func resultRoute(_ category: SearchCategory) -> Route {
         .searchResults(query.trimmingCharacters(in: .whitespacesAndNewlines), category)
     }
@@ -134,6 +283,30 @@ struct SearchCategoryView: View {
 
 // MARK: - Settings
 
+struct MacPairingControls: View {
+    private let nearby = NearbyPlayback.shared
+    @State private var code = ""
+
+    var body: some View {
+        if nearby.connected {
+            Label("Mac connected", systemImage: "desktopcomputer")
+        } else {
+            TextField("Mac pairing code", text: $code)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+            Button("Pair Mac") {
+                nearby.pair(code: code)
+                code = ""
+            }
+            .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if let status = nearby.status { Text(status).foregroundStyle(.secondary) }
+        }
+        if !nearby.pairingCode.isEmpty {
+            Button("Forget Mac", role: .destructive) { nearby.forgetMac() }
+        }
+    }
+}
+
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(DownloadManager.self) private var downloads
@@ -148,8 +321,6 @@ struct SettingsView: View {
     @AppStorage(NowPlayingStyle.storageKey) private var nowPlayingStyle = NowPlayingStyle.blurredArtwork.rawValue
     @AppStorage(AppIconSwitcher.matchKey) private var iconMatchesAccent = true
     @State private var confirmSignOut = false
-    @State private var macCode = ""
-    private let nearby = NearbyPlayback.shared
 
     var body: some View {
         @Bindable var player = model.player
@@ -177,24 +348,7 @@ struct SettingsView: View {
                     LabeledContent("User", value: model.credentials?.username ?? "")
                     Button("Sign Out", role: .destructive) { confirmSignOut = true }
                 }
-                Section("Playback Devices") {
-                    if nearby.connected {
-                        Label("Mac connected", systemImage: "desktopcomputer")
-                    } else {
-                        TextField("Mac pairing code", text: $macCode)
-                            .textInputAutocapitalization(.characters)
-                            .autocorrectionDisabled()
-                        Button("Pair Mac") {
-                            nearby.pair(code: macCode)
-                            macCode = ""
-                        }
-                        .disabled(macCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        if let status = nearby.status { Text(status).foregroundStyle(.secondary) }
-                    }
-                    if !nearby.pairingCode.isEmpty {
-                        Button("Forget Mac", role: .destructive) { nearby.forgetMac() }
-                    }
-                }
+                Section("Playback Devices") { MacPairingControls() }
                 Section {
                     Picker("Wi-Fi Quality", selection: $maxBitRate) {
                         Text("Original").tag(0)

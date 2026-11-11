@@ -1,8 +1,9 @@
 import Foundation
+import Observation
 import WatchConnectivity
 import UIKit
 
-@MainActor
+@Observable @MainActor
 final class PhoneSession: NSObject, WCSessionDelegate {
     static let shared = PhoneSession()
 
@@ -14,6 +15,13 @@ final class PhoneSession: NSObject, WCSessionDelegate {
     private var macState: [String: Any] = [:]
     private var remoteDevice: PlaybackDevice = .phone
     private var wasPhonePlaying = false
+    private(set) var switchingDevices = false
+    private(set) var deviceIssue: String?
+
+    var macPlaybackTitle: String? {
+        guard remoteDevice == .mac, macAvailable, macState[WatchKey.songID] != nil else { return nil }
+        return macState[WatchKey.title] as? String
+    }
 
     func attach(model: AppModel) {
         self.model = model
@@ -80,8 +88,76 @@ final class PhoneSession: NSObject, WCSessionDelegate {
         if session.isReachable { session.sendMessage(state, replyHandler: nil, errorHandler: nil) }
     }
 
-    private var macAvailable: Bool {
+    var macAvailable: Bool {
         NearbyPlayback.shared.connected && macAccount != nil && macAccount == model?.playbackAccount
+    }
+
+    func movePlayback(to target: PlaybackDevice) async {
+        guard !switchingDevices, macAvailable, let model, let account = model.playbackAccount else { return }
+        let source: PlaybackDevice = macPlaybackTitle == nil ? .phone : .mac
+        guard target != source, target == .phone || target == .mac else { return }
+        switchingDevices = true
+        deviceIssue = nil
+        defer { switchingDevices = false }
+
+        let id = UUID().uuidString
+        func request(_ command: WatchCommand, on device: PlaybackDevice,
+                     fields: [String: Any] = [:]) async -> [String: Any]? {
+            var message = fields
+            message[WatchKey.command] = command.rawValue
+            message[WatchKey.account] = account
+            if device == .phone { return await endpoint?.handle(command, message) }
+            let reply = await NearbyPlayback.shared.request(message)
+            if let state = reply?["state"] as? [String: Any] {
+                macAccount = state[WatchKey.account] as? String
+                macState = state
+            }
+            return reply
+        }
+
+        let snapshot = await request(.snapshot, on: source)
+        guard let data = snapshot?[WatchKey.transfer] as? Data, let transfer = PlaybackTransfer.decode(data) else {
+            deviceIssue = "This queue can’t move from \(source.name)."
+            return
+        }
+        let transaction = [WatchKey.transaction: id]
+        let prepared = await request(.prepare, on: target, fields: [
+            WatchKey.transaction: id, WatchKey.transfer: data
+        ])
+        guard prepared?[WatchKey.success] as? Bool == true else {
+            _ = await request(.cancel, on: target, fields: transaction)
+            deviceIssue = "Couldn’t prepare playback on \(target.name)."
+            return
+        }
+        let released = await request(.release, on: source, fields: [
+            WatchKey.transaction: id, WatchKey.songID: transfer.song?.id ?? ""
+        ])
+        guard let latest = PlaybackTransfer.decode(released?[WatchKey.transfer]),
+              latest.queue == transfer.queue, latest.index == transfer.index,
+              latest.manualIndexes == transfer.manualIndexes, latest.autoplayStart == transfer.autoplayStart else {
+            _ = await request(.cancel, on: source, fields: transaction)
+            _ = await request(.cancel, on: target, fields: transaction)
+            deviceIssue = "Couldn’t move playback. The queue may have changed."
+            return
+        }
+
+        let committed = await request(.commit, on: target, fields: [
+            WatchKey.transaction: id, WatchKey.elapsed: latest.position, WatchKey.isPlaying: latest.playing
+        ])
+        let confirmation = committed == nil ? await request(.committed, on: target, fields: transaction) : committed
+        guard confirmation?[WatchKey.success] as? Bool == true else {
+            if confirmation != nil {
+                _ = await request(.cancel, on: target, fields: transaction)
+                _ = await request(.cancel, on: source, fields: transaction)
+            }
+            deviceIssue = confirmation == nil
+                ? "Couldn’t confirm playback on \(target.name)."
+                : "Couldn’t move playback to \(target.name)."
+            return
+        }
+        remoteDevice = target
+        _ = await request(.finish, on: source, fields: transaction)
+        push()
     }
 
     private func currentState(for target: PlaybackDevice? = nil) -> [String: Any] {

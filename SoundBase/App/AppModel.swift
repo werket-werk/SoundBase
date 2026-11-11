@@ -173,6 +173,8 @@ final class AppModel {
     let router = Router()
     var loved: Set<String> = []
     var playlists: [Playlist] = []
+    private var loadedPlaylists = false
+    private(set) var pinnedPlaylistIDs: [String] = []
     private var recentPlaylistIDs: [String] = []
 
     init() {
@@ -187,6 +189,7 @@ final class AppModel {
 
     private func apply(_ creds: ServerCredentials) {
         credentials = creds
+        pinnedPlaylistIDs = UserDefaults.standard.stringArray(forKey: "pinnedPlaylists.\(creds.libraryKey)") ?? []
         recentPlaylistIDs = UserDefaults.standard.stringArray(forKey: recentPlaylistsKey(creds)) ?? []
         let client = SubsonicClient(creds: creds)
         self.client = client
@@ -224,7 +227,9 @@ final class AppModel {
         downloads.client = nil
         loved = []
         playlists = []
+        loadedPlaylists = false
         recentPlaylistIDs = []
+        pinnedPlaylistIDs = []
         player.stop(clearSavedQueue: false)
     }
 
@@ -259,10 +264,26 @@ final class AppModel {
     func refreshPlaylists() async {
         guard let client, let list = try? await client.playlists(), self.client === client else { return }
         playlists = list
+        loadedPlaylists = true
+    }
+
+    func togglePlaylistPin(_ id: String) {
+        guard let credentials else { return }
+        if pinnedPlaylistIDs.contains(id) { pinnedPlaylistIDs.removeAll { $0 == id } }
+        else { pinnedPlaylistIDs.append(id) }
+        UserDefaults.standard.set(pinnedPlaylistIDs, forKey: "pinnedPlaylists.\(credentials.libraryKey)")
+    }
+
+    var browsablePlaylists: [Playlist] {
+        if loadedPlaylists { return playlists }
+        return downloads.playlists.map {
+            Playlist(id: $0.id, name: $0.name, songCount: $0.tracks.count, coverArt: $0.tracks.first?.coverArt)
+        }
     }
 
     var recentPlaylists: [Playlist] {
-        recentPlaylistIDs.compactMap { id in playlists.first { $0.id == id } }
+        let byID = Dictionary(browsablePlaylists.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return recentPlaylistIDs.compactMap { byID[$0] }
     }
 
     func recordPlaylistOpen(_ id: String, using client: SubsonicClient) {
@@ -577,6 +598,7 @@ enum DownloadCategory: String, CaseIterable, Identifiable {
 
 struct OfflinePlaylistActions: View {
     let playlist: DownloadedPlaylist
+    var dismissAfterRemoval = true
     @Environment(DownloadManager.self) private var downloads
     @Environment(\.dismiss) private var dismiss
     @State private var confirmRemove = false
@@ -599,7 +621,7 @@ struct OfflinePlaylistActions: View {
         .confirmationDialog("Remove this offline playlist?", isPresented: $confirmRemove) {
             Button("Remove Download", role: .destructive) {
                 downloads.removePlaylist(playlist.id)
-                dismiss()
+                if dismissAfterRemoval { dismiss() }
             }
         }
     }
