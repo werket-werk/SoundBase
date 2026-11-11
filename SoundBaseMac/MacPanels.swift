@@ -163,6 +163,7 @@ struct MacSettingsView: View {
     @AppStorage(Pref.replayGain) private var replayGain = 0
     @AppStorage(AccentTheme.storageKey) private var accent = AccentTheme.fallback.rawValue
     @AppStorage(AppearanceMode.storageKey) private var appearance = AppearanceMode.system.rawValue
+    @AppStorage(NowPlayingStyle.storageKey) private var nowPlayingStyle = NowPlayingStyle.blurredArtwork.rawValue
     private let nearby = NearbyPlayback.shared
 
     var body: some View {
@@ -184,6 +185,9 @@ struct MacSettingsView: View {
                             .help(theme.name)
                         }
                     }
+                }
+                Picker("Now Playing Background", selection: $nowPlayingStyle) {
+                    ForEach(NowPlayingStyle.allCases) { Text($0.name).tag($0.rawValue) }
                 }
             }
             .formStyle(.grouped)
@@ -237,7 +241,7 @@ struct MacSettingsView: View {
 
             Form {
                 DownloadQualitySettings()
-                Text("Applies to new downloads. MP3 and Opus require server support. For Opus, use a server profile that sends Opus in MP4.")
+                Text("Applies to new downloads. Converting to MP3 or Opus requires server support. For Opus conversion, use a server profile that sends Opus in MP4.")
                     .foregroundStyle(.secondary)
                 if let issue = downloads.downloadIssue { Text(issue).foregroundStyle(.secondary) }
                 LabeledContent("Downloaded Songs", value: "\(downloads.songs.count)")

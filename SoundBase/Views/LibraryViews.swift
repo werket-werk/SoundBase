@@ -153,7 +153,7 @@ struct AlbumGridView: View {
                 } label: { Image(systemName: "arrow.up.arrow.down") }
             }
         }
-        .task(id: currentType) {
+        .task(id: [currentType, String(model.libraryRevision)]) {
             albums = []
             done = false
             loadingRequest = nil
@@ -234,7 +234,9 @@ struct ArtistsListView: View {
         .navigationTitle("Artists")
         .toolbar { LibraryLayoutMenu(layout: $layout) }
         .overlay { if index.isEmpty { ProgressView() } }
-        .task { if index.isEmpty { index = (try? await model.client?.artists()) ?? [] } }
+        .task(id: model.libraryRevision) {
+            if let updated = try? await model.client?.artists(), !Task.isCancelled { index = updated }
+        }
     }
 }
 

@@ -1,6 +1,8 @@
 import SwiftUI
 import Observation
 import CryptoKit
+import ImageIO
+import UniformTypeIdentifiers
 
 enum AppTab: Hashable { case home, browse, radio, library, search }
 
@@ -168,6 +170,9 @@ final class Router {
 final class AppModel {
     private(set) var credentials: ServerCredentials?
     private(set) var client: SubsonicClient?
+    var libraryRevision = 0
+    var libraryEdit: LibraryEdit?
+    var libraryCapabilities: SubsonicClient.LibraryManagementResponse?
     let player = Player()
     let downloads = DownloadManager()
     let router = Router()
@@ -699,6 +704,353 @@ struct PlaybackIssueControls: View {
             .font(.footnote)
             .padding(10)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+}
+
+struct LibraryEdit: Identifiable {
+    enum Kind: String {
+        case track, album, artist
+        var label: String { rawValue.capitalized }
+    }
+
+    struct Field: Identifiable {
+        let id: String
+        let label: String
+        let current: String?
+    }
+
+    let kind: Kind
+    let id: String
+    let name: String
+    var artist: String?
+    var album: String?
+    var genre: String?
+    var year: Int?
+    var track: Int?
+    var disc: Int?
+
+    init(_ song: Song) {
+        kind = .track
+        id = song.id
+        name = song.title
+        artist = song.artist
+        album = song.album
+        genre = song.genre
+        year = song.year
+        track = song.track
+        disc = song.discNumber
+    }
+
+    init(_ detail: AlbumDetail) {
+        kind = .album
+        id = detail.id
+        name = detail.name
+        artist = detail.artist
+        album = detail.name
+        genre = detail.genre
+        year = detail.year
+    }
+
+    init(_ detail: ArtistDetail) {
+        kind = .artist
+        id = detail.id
+        name = detail.name
+    }
+
+    var fields: [Field] {
+        let albumTitle = Field(id: "album", label: "Album title", current: album)
+        let albumArtist = Field(id: "albumartist", label: "Album artist", current: kind == .album ? artist : nil)
+        let date = Field(id: "date", label: "Release date", current: year.map(String.init))
+        switch kind {
+        case .track:
+            return [Field(id: "title", label: "Track title", current: name),
+                    Field(id: "artist", label: "Track artist", current: artist),
+                    albumTitle, albumArtist, date,
+                    Field(id: "tracknumber", label: "Track number", current: track.map(String.init)),
+                    Field(id: "discnumber", label: "Disc number", current: disc.map(String.init))]
+        case .album:
+            return [albumTitle, albumArtist, date]
+        case .artist:
+            return [Field(id: "artist", label: "Artist name", current: name)]
+        }
+    }
+
+    var removalDescription: String {
+        switch kind {
+        case .track: "Move this track to the server’s recovery folder?"
+        case .album: "Move all tracks on this album to the server’s recovery folder?"
+        case .artist: "Move tracks from albums credited solely to this album artist to the server’s recovery folder?"
+        }
+    }
+}
+
+struct LibraryEditButton: View {
+    let edit: LibraryEdit
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if model.libraryCapabilities?.editor == true {
+            Button {
+                model.libraryEdit = edit
+            } label: {
+                Label("Edit \(edit.kind.label)…", systemImage: "pencil")
+            }
+        }
+    }
+}
+
+struct LibraryEditSheet: View {
+    let edit: LibraryEdit
+    let client: SubsonicClient
+    let artistArtwork: Bool
+    let onComplete: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var fields: [String: String] = [:]
+    @State private var genre = ""
+    @State private var genreOptions: [Genre] = []
+    @State private var artwork: Data?
+    @State private var preview: CGImage?
+    @State private var covers: [LibraryCoverRelease] = []
+    @State private var importing = false
+    @State private var confirmingRemoval = false
+    @State private var renamingFile = false
+    @State private var filename = ""
+    @State private var working = false
+    @State private var result: String?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Edit \(edit.kind.label)").font(.title2.bold())
+                Text(edit.name).foregroundStyle(.secondary)
+                if let result {
+                    Text(result)
+                    Button("Done", action: onComplete).buttonStyle(.borderedProminent)
+                } else {
+                    fieldsForm
+                    if edit.kind != .artist || artistArtwork { artworkForm }
+                    if let errorMessage { Text(errorMessage).foregroundStyle(.secondary) }
+                    if working { ProgressView() }
+                    HStack {
+                        Button("Cancel") { dismiss() }
+                        Spacer()
+                        Button("Save Changes") { save(action: "edit") }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(tags.isEmpty && artwork == nil)
+                    }
+                    if edit.kind == .track {
+                        Button("Rename Audio File…") { renamingFile = true }
+                            .disabled(!tags.isEmpty || artwork != nil)
+                    }
+                    Button("Remove \(edit.kind.label) from Library…", role: .destructive) {
+                        confirmingRemoval = true
+                    }
+                }
+            }
+            .padding(24)
+            .disabled(working)
+        }
+        .frame(idealWidth: 510, idealHeight: 680)
+        .interactiveDismissDisabled(working || result != nil)
+        .task { genreOptions = (try? await client.genres()) ?? [] }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.image]) { selection in
+            do {
+                let url = try selection.get()
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                guard size <= 20_000_000 else { throw SubsonicFailure.server("Choose an image smaller than 20 MB.") }
+                try setArtwork(Data(contentsOf: url))
+            } catch { errorMessage = error.localizedDescription }
+        }
+        .alert("Rename Audio File", isPresented: $renamingFile) {
+            TextField("New filename without extension", text: $filename)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") { save(action: "rename-file") }
+                .disabled(filename.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        } message: {
+            Text("The file will stay in its current folder and keep its extension.")
+        }
+        .alert("Remove \(edit.kind.label) from Library?", isPresented: $confirmingRemoval) {
+            Button("Cancel", role: .cancel) {}
+            Button("Move to Recovery", role: .destructive) { save(action: "remove") }
+        } message: {
+            Text("\(edit.removalDescription) This affects everyone who uses the library.")
+        }
+    }
+
+    private var fieldsForm: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(edit.fields) { field in
+                Text(field.label).font(.subheadline.bold())
+                TextField(field.current ?? field.label, text: Binding(
+                    get: { fields[field.id, default: ""] },
+                    set: { fields[field.id] = $0 }
+                ))
+                .accessibilityLabel(field.label)
+                .textFieldStyle(.roundedBorder)
+            }
+            Text("Genre").font(.subheadline.bold())
+            HStack {
+                TextField(edit.genre ?? "New genre", text: $genre)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Genre")
+                Menu("Existing Genres") {
+                    ForEach(genreOptions, id: \.value) { option in
+                        Button(option.value) { genre = option.value }
+                    }
+                }
+                .disabled(genreOptions.isEmpty)
+            }
+            Text("Enter only the fields you want to change. A new genre is added when you save.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+
+    private var artworkForm: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Artwork").font(.subheadline.bold())
+            if let preview {
+                Image(decorative: preview, scale: 1)
+                    .resizable().scaledToFit().frame(maxWidth: 140, maxHeight: 140)
+                    .accessibilityLabel("Selected artwork")
+                Button("Clear Selection") { artwork = nil; self.preview = nil }
+            }
+            HStack {
+                Button("Choose Image…") { importing = true }
+                if edit.kind != .artist, edit.album != nil {
+                    Button("Find Album Artwork") { run { covers = try await LibraryCoverRelease.search(edit) } }
+                }
+            }
+            ForEach(covers) { release in
+                HStack {
+                    AsyncImage(url: release.coverURL(size: 250)) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: {
+                        Image(systemName: "photo").foregroundStyle(.secondary)
+                    }
+                    .frame(width: 48, height: 48)
+                    VStack(alignment: .leading) {
+                        Text(release.title)
+                        Text([release.date, release.country, release.disambiguation]
+                            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Select") {
+                        run {
+                            let (data, response) = try await URLSession.shared.data(from: release.coverURL(size: 1200))
+                            guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 20_000_000 else {
+                                throw SubsonicFailure.server("This release’s cover could not be downloaded.")
+                            }
+                            try setArtwork(data)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var tags: [String: String] {
+        var changes = fields.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        changes["genre"] = genre.trimmingCharacters(in: .whitespacesAndNewlines)
+        return changes.filter { !$0.value.isEmpty }
+    }
+
+    private func run(_ operation: @escaping @MainActor () async throws -> Void) {
+        working = true
+        errorMessage = nil
+        Task {
+            defer { working = false }
+            do { try await operation() }
+            catch let failure as SubsonicFailure { errorMessage = failure.localizedDescription }
+            catch { errorMessage = "The operation couldn’t be confirmed. Check the library before trying again." }
+        }
+    }
+
+    private func save(action: String) {
+        run {
+            result = try await client.libraryManagement(
+                action, id: edit.id, name: edit.name, kind: edit.kind.rawValue,
+                tags: action == "edit" ? tags : [:], artwork: action == "edit" ? artwork : nil,
+                filename: action == "rename-file" ? filename.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+            ).message
+        }
+    }
+
+    private func setArtwork(_ data: Data) throws {
+        let error = SubsonicFailure.server("Couldn’t read that image. Choose a different image.")
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+                  kCGImageSourceThumbnailMaxPixelSize: 1200
+              ] as CFDictionary) else { throw error }
+        let output = NSMutableData()
+        guard let encoder = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil) else {
+            throw error
+        }
+        CGImageDestinationAddImage(encoder, thumbnail, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        guard CGImageDestinationFinalize(encoder), output.length <= 2 * 1024 * 1024 else { throw error }
+        artwork = output as Data
+        preview = thumbnail
+    }
+}
+
+private struct LibraryCoverRelease: Decodable, Identifiable {
+    let id: UUID
+    let title: String
+    let date: String?
+    let country: String?
+    let disambiguation: String?
+
+    func coverURL(size: Int) -> URL {
+        URL(string: "https://coverartarchive.org/release/\(id.uuidString.lowercased())/front-\(size)")!
+    }
+
+    static func search(_ edit: LibraryEdit) async throws -> [Self] {
+        struct Response: Decodable { let releases: [LibraryCoverRelease] }
+        func quoted(_ text: String) -> String {
+            "\"" + text.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"") + "\""
+        }
+        var query = "release:\(quoted(edit.album ?? edit.name))"
+        if let artist = edit.artist, !artist.isEmpty { query += " AND artist:\(quoted(artist))" }
+        var url = URLComponents(string: "https://musicbrainz.org/ws/2/release")!
+        url.queryItems = [URLQueryItem(name: "query", value: query), URLQueryItem(name: "fmt", value: "json"),
+                          URLQueryItem(name: "limit", value: "8")]
+        var request = URLRequest(url: url.url!)
+        request.setValue("SoundBase/1.0 (https://werket-werk.github.io/SoundBase/)", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw SubsonicFailure.server("MusicBrainz is unavailable. Try again or choose an image.")
+        }
+        let releases = try JSONDecoder().decode(Response.self, from: data).releases
+        guard !releases.isEmpty else { throw SubsonicFailure.server("No matching releases found. You can choose an image instead.") }
+        return releases
+    }
+}
+
+extension View {
+    func libraryEditor(model: AppModel) -> some View {
+        @Bindable var model = model
+        let client = model.client
+        return task(id: client?.creds) {
+            model.libraryCapabilities = nil
+            let status = try? await client?.libraryManagement("status")
+            guard !Task.isCancelled, model.client === client else { return }
+            model.libraryCapabilities = status
+        }
+        .sheet(item: $model.libraryEdit) { selection in
+            if let client {
+                LibraryEditSheet(edit: selection, client: client,
+                                 artistArtwork: model.libraryCapabilities?.artistArtwork == true) {
+                    model.libraryEdit = nil
+                    if model.client === client { model.libraryRevision += 1 }
+                }
+            }
         }
     }
 }

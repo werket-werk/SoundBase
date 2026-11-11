@@ -1,0 +1,28 @@
+services:
+  soundbase-library:
+    build: .
+    restart: unless-stopped
+    # Replace with your service account UID:GID.
+    user: "1000:1000"
+    command:
+      - --bind
+      - 0.0.0.0
+      - --navidrome
+      - http://navidrome:4533 # Replace with your Navidrome service URL.
+      - --music
+      - /music
+      - --recovery
+      - /recovery
+      - --recovery-days
+      - "30"
+    # Replace the host paths on the left. The music path on the right must match Navidrome.
+    volumes:
+      - /srv/music:/music
+      - /srv/soundbase-recovery:/recovery
+    networks:
+      - music
+
+networks:
+  music:
+    external: true
+    name: music # Replace with your existing Docker network name.

@@ -233,3 +233,53 @@ final class SubsonicClient: Sendable {
         try await call("getInternetRadioStations").internetRadioStations?.internetRadioStation ?? []
     }
 }
+
+extension SubsonicClient {
+    struct LibraryManagementResponse: Decodable {
+        let message: String
+        let version: Int?
+        let editor: Bool?
+        let artistArtwork: Bool?
+    }
+
+    func libraryManagement(_ action: String, id: String? = nil, name: String? = nil,
+                           kind: String? = nil, tags: [String: String] = [:], artwork: Data? = nil, filename: String? = nil) async throws -> LibraryManagementResponse {
+        guard creds.url.scheme?.lowercased() == "https" else { throw SubsonicFailure.invalidURL }
+        let url = creds.url.appendingPathComponent("soundbase-library/v1/\(action)")
+        struct Body: Encodable {
+            let u: String
+            let t: String
+            let s: String
+            let id: String?
+            let name: String?
+            let kind: String?
+            let tags: [String: String]
+            let artwork: Data?
+            let filename: String?
+        }
+        let fields = Body(u: creds.username, t: creds.token, s: creds.salt,
+                          id: id, name: name, kind: kind, tags: tags, artwork: artwork, filename: filename)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = action == "status" ? 5 : 300
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(fields)
+        let (data, response) = try await URLSession.shared.data(for: request, delegate: RejectLibraryRedirects())
+        guard let http = response as? HTTPURLResponse else { throw SubsonicFailure.invalidURL }
+        let result = try? JSONDecoder().decode(LibraryManagementResponse.self, from: data)
+        guard (200..<300).contains(http.statusCode) else {
+            if let result { throw SubsonicFailure.server(result.message) }
+            throw SubsonicFailure.http(http.statusCode)
+        }
+        guard let result else { throw SubsonicFailure.server("Unexpected library management response.") }
+        return result
+    }
+}
+
+private final class RejectLibraryRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}

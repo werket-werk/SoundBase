@@ -77,10 +77,30 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         WKCompanionAppBundleIdentifier: com.werket.soundbase
         UIBackgroundModes: [audio]
+        CFBundleURLTypes:
+          - CFBundleURLName: com.werket.soundbase.watchkitapp
+            CFBundleURLSchemes: [soundbase-watch]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.werket.soundbase.watchkitapp
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    dependencies:
+      - target: SoundBaseWatchComplication
+  SoundBaseWatchComplication:
+    type: app-extension
+    platform: watchOS
+    sources: [SoundBaseWatchComplication]
+    info:
+      path: SoundBaseWatchComplication/Info.plist
+      properties:
+        CFBundleDisplayName: SoundBase
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.werket.soundbase.watchkitapp.complication
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
   SoundBaseMac:
     type: application
     platform: macOS

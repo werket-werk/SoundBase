@@ -273,6 +273,7 @@ struct MacSongTable: View {
     var showNumber = false
     var showAlbum = true
     var playSingle = false
+    var query = ""
     var onDelete: ((IndexSet) -> Void)? = nil
     @Environment(AppModel.self) private var model
     @Environment(Player.self) private var player
@@ -285,7 +286,9 @@ struct MacSongTable: View {
     }
 
     var body: some View {
-        let rows = songs.enumerated().map { Row(id: $0.offset, song: $0.element) }
+        let rows = songs.enumerated().compactMap { index, song in
+            song.matchesDownloadSearch(query) ? Row(id: index, song: song) : nil
+        }
         Table(rows, selection: $selection) {
             TableColumn("") { row in
                 Group {
@@ -321,13 +324,14 @@ struct MacSongTable: View {
             .width(32)
         }
         .contextMenu(forSelectionType: Int.self) { ids in
-            let picked = ids.sorted().map { songs[$0] }
+            let picked = ids.sorted().filter { songs.indices.contains($0) }.map { songs[$0] }
             if !picked.isEmpty { MacSongMenu(songs: picked, onDelete: onDelete.map { del in { del(IndexSet(ids)) } }) }
         } primaryAction: { ids in
             guard let first = ids.min(), songs.indices.contains(first) else { return }
             if playSingle { model.playFromLibrary([songs[first]]) }
             else { model.playFromLibrary(songs, startAt: first) }
         }
+        .onChange(of: query) { _, _ in selection = [] }
         .onDeleteCommand { if let onDelete, !selection.isEmpty { onDelete(IndexSet(selection)); selection = [] } }
     }
 }
@@ -367,6 +371,9 @@ struct MacSongMenu: View {
             Button("Create Station") { router.go(.generated(.song(song))) }
             if let albumId = song.albumId { Button("Go to Album") { router.go(.album(albumId)) } }
             if let artistId = song.artistId { Button("Go to Artist") { router.go(.artist(artistId)) } }
+        }
+        if album == nil, songs.count == 1, let song = songs.first, !song.isRadio {
+            LibraryEditButton(edit: LibraryEdit(song))
         }
         if let onDelete {
             Divider()

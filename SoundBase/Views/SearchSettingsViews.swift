@@ -378,7 +378,7 @@ struct SettingsView: View {
                     Toggle("Download Over Wi-Fi Only", isOn: $wifiOnlyDownloads)
                     if let issue = downloads.downloadIssue { Text(issue).foregroundStyle(.secondary) }
                 } header: { Text("Downloads") } footer: {
-                    Text("Applies to new downloads. MP3 and Opus require server support. For Opus, use a server profile that sends Opus in MP4. Wi-Fi only prevents new downloads over cellular. Apple Watch uses its existing AAC 128 kbps download policy.")
+                    Text("Applies to new downloads. Converting to MP3 or Opus requires server support. For Opus conversion, use a server profile that sends Opus in MP4. Wi-Fi only prevents new downloads over cellular. Apple Watch uses its existing AAC 128 kbps download policy.")
                 }
                 Section {
                     Picker("Sound Check (ReplayGain)", selection: $replayGain) {

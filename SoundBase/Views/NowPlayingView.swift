@@ -298,44 +298,6 @@ private struct MoveToMacButton: View {
     }
 }
 
-struct NowPlayingBackground: View {
-    let image: UIImage?
-    @AppStorage(NowPlayingStyle.storageKey) private var styleRaw = NowPlayingStyle.blurredArtwork.rawValue
-    @State private var colors: [Color]?
-
-    var body: some View {
-        let style = NowPlayingStyle(rawValue: styleRaw) ?? .blurredArtwork
-        Color.black
-            .overlay {
-                switch style {
-                case .blurredArtwork:
-                    if let image {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .scaleEffect(1.6)
-                            .blur(radius: 70)
-                            .saturation(1.6)
-                            .transition(.opacity)
-                    }
-                case .artworkColours:
-                    if let colors {
-                        LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
-                            .transition(.opacity)
-                    }
-                case .black:
-                    EmptyView()
-                }
-            }
-            .overlay(Color.black.opacity(style == .black ? 0 : 0.28))
-            .clipped()
-            .ignoresSafeArea()
-            .animation(.easeInOut(duration: 0.8), value: image)
-            .animation(.easeInOut(duration: 0.8), value: colors)
-            .task(id: image) { colors = image?.edgeColors() }
-    }
-}
-
 // MARK: - Scrubber
 
 struct ScrubberView: View {

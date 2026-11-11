@@ -252,7 +252,7 @@ struct SongRow: View {
             }
             .buttonStyle(.plain)
             QueueTrackButton(song: song)
-            Menu { SongMenu(song: song) } label: {
+            Menu { SongMenu(song: song, showLibraryEditor: true) } label: {
                 Image(systemName: "ellipsis")
                     .font(.subheadline)
                     .frame(width: 30, height: 36)
@@ -261,12 +261,13 @@ struct SongRow: View {
             .foregroundStyle(.primary)
         }
         .padding(.vertical, 4)
-        .contextMenu { SongMenu(song: song) }
+        .contextMenu { SongMenu(song: song, showLibraryEditor: true) }
     }
 }
 
 struct SongMenu: View {
     let song: Song
+    var showLibraryEditor = false
     @Environment(AppModel.self) private var model
     @Environment(Router.self) private var router
 
@@ -275,6 +276,9 @@ struct SongMenu: View {
         let player = model.player
         Button { player.playNext([song]) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
         Button { player.addToQueue([song]) } label: { Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") }
+        if showLibraryEditor && !song.isRadio {
+            LibraryEditButton(edit: LibraryEdit(song))
+        }
         Divider()
         Button { router.playlistPickerSongs = [song] } label: { Label("Add to Playlist…", systemImage: "text.badge.plus") }
         Button { model.toggleLove(song.id, kind: .song) } label: {

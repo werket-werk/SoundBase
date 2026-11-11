@@ -120,11 +120,12 @@ struct AlbumView: View {
                                 Label("Create Station", systemImage: "dot.radiowaves.left.and.right")
                             }
                         }
+                        LibraryEditButton(edit: LibraryEdit(album))
                     } label: { Image(systemName: "ellipsis") }
                 }
             }
         }
-        .task(id: id) { await load() }
+        .task(id: [id, String(model.libraryRevision)]) { await load() }
     }
 
     @ViewBuilder
@@ -151,7 +152,7 @@ struct AlbumView: View {
     private func load() async {
         loadFailed = false
         guard let client = model.client, let detail = try? await client.album(id) else {
-            if !Task.isCancelled { loadFailed = true }
+            if !Task.isCancelled { album = nil; loadFailed = true }
             return
         }
         guard !Task.isCancelled else { return }
@@ -173,6 +174,7 @@ struct ArtistView: View {
     let id: String
     @Environment(AppModel.self) private var model
     @State private var artist: ArtistDetail?
+    @State private var loadFailed = false
     @State private var info: ArtistInfo?
     @State private var top: [Song] = []
     @State private var showAllTop = false
@@ -230,6 +232,12 @@ struct ArtistView: View {
                     }
                 }
                 .padding(.bottom, 30)
+            } else if loadFailed {
+                ContentUnavailableView {
+                    Label("Couldn’t Open Artist", systemImage: "exclamationmark.circle")
+                } actions: {
+                    Button("Retry") { Task { await load() } }
+                }
             } else {
                 ProgressView().padding(80).frame(maxWidth: .infinity)
             }
@@ -247,11 +255,12 @@ struct ArtistView: View {
                             Label("Create Station", systemImage: "dot.radiowaves.left.and.right")
                         }
                         Button { Task { await shuffleAll(artist) } } label: { Label("Shuffle All", systemImage: "shuffle") }
+                        LibraryEditButton(edit: LibraryEdit(artist))
                     } label: { Image(systemName: "ellipsis") }
                 }
             }
         }
-        .task(id: id) { await load() }
+        .task(id: [id, String(model.libraryRevision)]) { await load() }
     }
 
     private func header(_ artist: ArtistDetail) -> some View {
@@ -287,7 +296,12 @@ struct ArtistView: View {
     }
 
     private func load() async {
-        guard let client = model.client, let detail = try? await client.artist(id) else { return }
+        loadFailed = false
+        guard let client = model.client, let detail = try? await client.artist(id) else {
+            if !Task.isCancelled { artist = nil; loadFailed = true }
+            return
+        }
+        guard !Task.isCancelled else { return }
         artist = detail
         async let i = try? client.artistInfo(id)
         async let t = try? client.topSongs(artist: detail.name)
@@ -451,87 +465,6 @@ struct PlaylistView: View {
                 await model.refreshPlaylists()
             } catch {
                 writeError = error.localizedDescription
-            }
-        }
-    }
-}
-
-private struct PlaylistOrderEditor: View {
-    private struct Entry: Identifiable {
-        let id: Int
-        let song: Song
-    }
-
-    let playlist: PlaylistDetail
-    let onSave: (PlaylistDetail) -> Void
-    @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
-    @State private var entries: [Entry]
-    @State private var saving = false
-    @State private var error: String?
-
-    init(playlist: PlaylistDetail, onSave: @escaping (PlaylistDetail) -> Void) {
-        self.playlist = playlist
-        self.onSave = onSave
-        _entries = State(initialValue: (playlist.entry ?? []).enumerated().map { Entry(id: $0.offset, song: $0.element) })
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if let error { Text(error).foregroundStyle(.secondary) }
-                ForEach(entries) { entry in
-                    LibraryItemTitle(title: entry.song.title, subtitle: entry.song.artist ?? "")
-                }
-                .onMove { entries.move(fromOffsets: $0, toOffset: $1) }
-                .moveDisabled(saving)
-            }
-            .environment(\.editMode, .constant(.active))
-            .navigationTitle("Reorder Tracks")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .disabled(saving || entries.map(\.id) == Array(entries.indices))
-                }
-            }
-        }
-        .interactiveDismissDisabled(saving)
-    }
-
-    private func save() {
-        guard !saving, let client = model.client else { return }
-        saving = true
-        error = nil
-        Task {
-            defer { saving = false }
-            do {
-                let original = (playlist.entry ?? []).map(\.id)
-                let desired = entries.map { $0.song.id }
-                guard let current = try await client.playlist(playlist.id) else {
-                    error = "This playlist is no longer available."
-                    return
-                }
-                let currentOrder = (current.entry ?? []).map(\.id)
-                guard currentOrder == original || currentOrder == desired else {
-                    error = "This playlist changed on the server. Close the editor and refresh before reordering."
-                    return
-                }
-                let updated: PlaylistDetail?
-                if currentOrder == desired {
-                    updated = current
-                } else {
-                    updated = try await client.reorderPlaylist(playlist.id, songIDs: desired)
-                }
-                guard let updated, (updated.entry ?? []).map(\.id) == desired else {
-                    error = "The server didn’t return the saved track order. Refresh the playlist before trying again."
-                    return
-                }
-                onSave(updated)
-                dismiss()
-            } catch {
-                self.error = error.localizedDescription
             }
         }
     }

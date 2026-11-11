@@ -369,13 +369,9 @@ final class DownloadManager {
         let defaults = UserDefaults.standard
         let quality = defaults.object(forKey: Pref.downloadQuality) as? Int ?? Pref.defaultDownloadQuality
         let format = DownloadFormat.selected(quality: quality, format: defaults.string(forKey: Pref.downloadFormat) ?? "")
-        let needsConversion: Bool
-        switch format {
-        case .original: needsConversion = false
-        case .aac: needsConversion = song.shouldTranscode(toKbps: quality)
-        case .mp3, .opus:
-            needsConversion = song.suffix?.lowercased() != format.rawValue || song.shouldTranscode(toKbps: quality)
-        }
+        let optimizeLossless = defaults.object(forKey: Pref.optimizeLosslessDownloads) as? Bool
+            ?? Pref.defaultOptimizeLosslessDownloads
+        let needsConversion = format.shouldConvert(song, quality: quality, optimizeLossless: optimizeLossless)
         url = needsConversion ? client.streamURL(song.id, maxBitRate: quality, format: format.rawValue)
             : client.downloadURL(song.id)
         if needsConversion {
@@ -399,7 +395,7 @@ final class DownloadManager {
                   try Self.hasAudioBody(tmp) else { throw DownloadError.invalidResponse }
 
             #if !os(watchOS)
-            if format == .mp3 || format == .opus {
+            if (needsConversion || !optimizeLossless) && (format == .mp3 || format == .opus) {
                 let suffix = try Self.containerSuffix(for: format, in: tmp)
                 let staged = tmp.deletingLastPathComponent().appendingPathComponent("\(UUID().uuidString).\(suffix)")
                 try FileManager.default.moveItem(at: tmp, to: staged)

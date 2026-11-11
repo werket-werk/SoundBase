@@ -65,6 +65,7 @@ struct MainTabView: View {
                 NavigationStack(path: $router.searchPath) { SearchView().routes() }
             }
         }
+        .libraryEditor(model: model)
         .miniPlayer(visible: model.player.current != nil || PhoneSession.shared.macPlaybackTitle != nil)
         .fullScreenCover(isPresented: $router.showNowPlaying) {
             NowPlayingView()

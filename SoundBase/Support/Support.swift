@@ -1,6 +1,7 @@
 import Foundation
 import Security
 import SwiftUI
+import CoreImage
 #if canImport(UIKit)
 import Network
 import UIKit
@@ -131,6 +132,8 @@ enum Pref {
     static let replayGain = "replayGain"      // 0 off, 1 track, 2 album
     static let downloadQuality = "downloadQuality" // Int kbps, 0 = original file
     static let downloadFormat = "downloadFormat"
+    static let optimizeLosslessDownloads = "optimizeLosslessDownloads"
+    static let defaultOptimizeLosslessDownloads = true
     static let cellularBitRate = "cellularBitRate"  // -1 = use the Wi-Fi setting
     static let wifiOnlyDownloads = "wifiOnlyDownloads"
     static let defaultDownloadQuality = 256
@@ -358,6 +361,15 @@ enum DownloadFormat: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String { self == .original ? "Original" : rawValue.uppercased() }
 
+    func shouldConvert(_ song: Song, quality: Int, optimizeLossless: Bool) -> Bool {
+        guard self != .original, quality > 0 else { return false }
+        if optimizeLossless {
+            return song.isLossless && song.shouldTranscode(toKbps: quality)
+        }
+        return song.shouldTranscode(toKbps: quality) ||
+            (self != .aac && song.suffix?.lowercased() != rawValue)
+    }
+
     static func selected(quality: Int, format: String) -> Self {
         guard quality > 0 else { return .original }
         guard let selected = Self(rawValue: format), selected != .original else { return .aac }
@@ -368,6 +380,7 @@ enum DownloadFormat: String, CaseIterable, Identifiable {
 struct DownloadQualitySettings: View {
     @AppStorage(Pref.downloadQuality) private var quality = Pref.defaultDownloadQuality
     @AppStorage(Pref.downloadFormat) private var format = DownloadFormat.aac.rawValue
+    @AppStorage(Pref.optimizeLosslessDownloads) private var optimizeLossless = Pref.defaultOptimizeLosslessDownloads
 
     private var selection: Binding<DownloadFormat> {
         Binding {
@@ -387,6 +400,12 @@ struct DownloadQualitySettings: View {
             ForEach(DownloadFormat.allCases) { Text($0.title).tag($0) }
         }
         if quality > 0 {
+            Toggle("Optimize Lossless Downloads", isOn: $optimizeLossless)
+            if optimizeLossless {
+                Text("Keeps existing formats such as Opus, AAC and MP3. Converts lossless tracks when the selected quality is likely to save space.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             Picker("Download Quality", selection: $quality) {
                 ForEach([320, 256, 192, 128, 96, 64], id: \.self) { rate in
                     Text("\(rate) kbps").tag(rate)
@@ -409,3 +428,169 @@ final class StreamingConnection {
     }
 }
 #endif
+
+struct PlaylistOrderEditor: View {
+    private struct Entry: Identifiable {
+        let id: Int
+        let song: Song
+    }
+
+    let playlist: PlaylistDetail
+    let onSave: (PlaylistDetail) -> Void
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var entries: [Entry]
+    @State private var saving = false
+    @State private var error: String?
+
+    init(playlist: PlaylistDetail, onSave: @escaping (PlaylistDetail) -> Void) {
+        self.playlist = playlist
+        self.onSave = onSave
+        _entries = State(initialValue: (playlist.entry ?? []).enumerated().map { Entry(id: $0.offset, song: $0.element) })
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let error { Text(error).foregroundStyle(.secondary) }
+                ForEach(entries) { entry in
+                    LibraryItemTitle(title: entry.song.title, subtitle: entry.song.artist ?? "")
+                    #if os(macOS)
+                    .contextMenu {
+                        let index = entries.firstIndex { $0.id == entry.id }
+                        Button("Move Up") {
+                            if let index, index > 0 { entries.swapAt(index, index - 1) }
+                        }
+                        .disabled(saving || index == entries.indices.first)
+                        Button("Move Down") {
+                            if let index, index + 1 < entries.count { entries.swapAt(index, index + 1) }
+                        }
+                        .disabled(saving || index == entries.indices.last)
+                    }
+                    #endif
+                }
+                .onMove { entries.move(fromOffsets: $0, toOffset: $1) }
+                .moveDisabled(saving)
+            }
+            #if os(iOS)
+            .environment(\.editMode, .constant(.active))
+            #endif
+            .navigationTitle("Reorder Tracks")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(saving || entries.map(\.id) == Array(entries.indices))
+                }
+            }
+        }
+        .interactiveDismissDisabled(saving)
+    }
+
+    private func save() {
+        guard !saving, let client = model.client else { return }
+        saving = true
+        error = nil
+        Task {
+            defer { saving = false }
+            do {
+                let original = (playlist.entry ?? []).map(\.id)
+                let desired = entries.map { $0.song.id }
+                guard let current = try await client.playlist(playlist.id) else {
+                    error = "This playlist is no longer available."
+                    return
+                }
+                let currentOrder = (current.entry ?? []).map(\.id)
+                guard currentOrder == original || currentOrder == desired else {
+                    error = "This playlist changed on the server. Close the editor and refresh before reordering."
+                    return
+                }
+                let updated: PlaylistDetail?
+                if currentOrder == desired {
+                    updated = current
+                } else {
+                    updated = try await client.reorderPlaylist(playlist.id, songIDs: desired)
+                }
+                guard let updated, (updated.entry ?? []).map(\.id) == desired else {
+                    error = "The server didn’t return the saved track order. Refresh the playlist before trying again."
+                    return
+                }
+                guard model.client === client else { return }
+                onSave(updated)
+                dismiss()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+}
+
+struct NowPlayingBackground: View {
+    let image: PlatformImage?
+    @AppStorage(NowPlayingStyle.storageKey) private var styleRaw = NowPlayingStyle.blurredArtwork.rawValue
+    @State private var colors: [Color]?
+
+    var body: some View {
+        let style = NowPlayingStyle(rawValue: styleRaw) ?? .blurredArtwork
+        Color.black
+            .overlay {
+                switch style {
+                case .blurredArtwork:
+                    if let image {
+                        Image(platformImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .scaleEffect(1.6)
+                            .blur(radius: 70)
+                            .saturation(1.6)
+                            .transition(.opacity)
+                    }
+                case .artworkColours:
+                    if let colors {
+                        LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
+                            .transition(.opacity)
+                    }
+                case .black:
+                    EmptyView()
+                }
+            }
+            .overlay(Color.black.opacity(style == .black ? 0 : 0.28))
+            .clipped()
+            .ignoresSafeArea()
+            .animation(.easeInOut(duration: 0.8), value: image)
+            .animation(.easeInOut(duration: 0.8), value: colors)
+            .task(id: image) { colors = image?.edgeColors() }
+    }
+}
+
+extension PlatformImage {
+    /// Average colours of the top and bottom halves, used for the "Artwork Colours" player background.
+    func edgeColors() -> [Color]? {
+        #if os(macOS)
+        guard let cgImage = cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let input = CIImage(cgImage: cgImage)
+        #else
+        guard let input = CIImage(image: self) else { return nil }
+        #endif
+        let context = CIContext(options: [.workingColorSpace: NSNull()])
+        let extent = input.extent
+        let halves = [
+            CGRect(x: extent.minX, y: extent.midY, width: extent.width, height: extent.height / 2),
+            CGRect(x: extent.minX, y: extent.minY, width: extent.width, height: extent.height / 2),
+        ]
+        var colors: [Color] = []
+        for rect in halves {
+            guard let filter = CIFilter(name: "CIAreaAverage",
+                                        parameters: [kCIInputImageKey: input, kCIInputExtentKey: CIVector(cgRect: rect)]),
+                  let output = filter.outputImage else { return nil }
+            var px = [UInt8](repeating: 0, count: 4)
+            context.render(output, toBitmap: &px, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                           format: .RGBA8, colorSpace: nil)
+            colors.append(Color(red: Double(px[0]) / 255, green: Double(px[1]) / 255, blue: Double(px[2]) / 255))
+        }
+        return colors
+    }
+}

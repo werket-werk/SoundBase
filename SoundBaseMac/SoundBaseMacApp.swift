@@ -108,6 +108,7 @@ struct MacMainView: View {
                     .macRoutes()
             }
         }
+        .libraryEditor(model: model)
         .searchable(text: $search, placement: .sidebar, prompt: "Search")
         .onChange(of: search) { _, new in
             if section == .search { router.homePath = [] }
@@ -162,10 +163,19 @@ struct MacMainView: View {
                 Label("Genres", systemImage: "guitars").tag(MacSection.genres)
                 Label("Favourites", systemImage: "star").tag(MacSection.loved)
                 Label("Downloaded", systemImage: "arrow.down.circle").tag(MacSection.downloads)
+                ForEach(model.pinnedPlaylistIDs, id: \.self) { id in
+                    if let name = model.playlists.first(where: { $0.id == id })?.name
+                        ?? model.downloads.playlistIndex.playlists[id]?.name {
+                        Label(name, systemImage: "pin.fill").tag(MacSection.playlist(id))
+                        .contextMenu {
+                            Button("Unpin") { model.togglePlaylistPin(id) }
+                        }
+                    }
+                }
             }
             Section("Playlists") {
                 Label("All Playlists", systemImage: "music.note.list").tag(MacSection.playlists)
-                ForEach(model.playlists) { playlist in
+                ForEach(model.playlists.filter { !model.pinnedPlaylistIDs.contains($0.id) }) { playlist in
                     Label(playlist.name, systemImage: "music.note.list").tag(MacSection.playlist(playlist.id))
                         .contextMenu {
                             Button("Play") { Task { await playPlaylist(playlist.id, shuffled: false) } }
@@ -194,7 +204,9 @@ struct MacMainView: View {
         case .loved: MacLovedView()
         case .downloads: MacDownloadsView()
         case .playlists: MacPlaylistsView()
-        case .playlist(let id): MacPlaylistView(id: id)
+        case .playlist(let id):
+            MacPlaylistView(id: id) { section = .playlists }
+                .id(id)
         }
     }
 
@@ -251,11 +263,8 @@ struct MacNowPlayingView: View {
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background {
-            Rectangle().fill(.background)
-            LinearGradient(colors: [.accentColor.opacity(0.22), .clear],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-        }
+        .environment(\.colorScheme, .dark)
+        .background { NowPlayingBackground(image: player.artwork) }
     }
 }
 

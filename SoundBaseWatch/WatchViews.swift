@@ -14,6 +14,11 @@ struct SoundBaseWatchApp: App {
                 .environment(session)
                 .tint(session.accent.color)
                 .onAppear { session.start(store: store) }
+                .onOpenURL { url in
+                    if url.scheme == "soundbase-watch" && url.host == "now-playing" {
+                        store.path = [.nowPlaying]
+                    }
+                }
                 #if DEBUG
                 .task { await WatchScreenshotDirector.run(store: store, session: session) }
                 #endif
