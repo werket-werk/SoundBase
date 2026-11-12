@@ -2,6 +2,8 @@
 
 A free, open-source iPhone, Apple Watch and Mac player for [Navidrome](https://www.navidrome.org) and any OpenSubsonic server, built in SwiftUI.
 
+[![Download on the App Store](https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us)](https://apps.apple.com/app/id6832102460)
+
 ## Features
 
 **iPhone**
